@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>uplaj panel</title>
+<style>
+  :root { --bg:#0d0f13; --panel:#161920; --panel2:#1d212a; --line:#272c38; --text:#e7e9ef; --dim:#8b93a7; --ok:#3ecf8e; --warn:#f5a524; --bad:#f2555a; --acc:#5b8cff; }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--text); font:13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; display:flex; flex-direction:column; overflow:hidden; }
+  header { display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding:8px 12px; border-bottom:1px solid var(--line); background:var(--panel); flex:none; }
+  header b { font-size:15px; margin-right:6px; letter-spacing:.02em; }
+  .sp { flex:1; }
+  input, button, select { background:#0b0d11; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 9px; font:inherit; }
+  button { cursor:pointer; white-space:nowrap; } button:hover { border-color:#3a4152; }
+  button.primary { background:var(--acc); border-color:var(--acc); color:#fff; }
+  label.chk { display:flex; gap:5px; align-items:center; color:var(--dim); }
+  #hint { color:var(--dim); font-size:12px; padding:4px 12px; border-bottom:1px solid var(--line); flex:none; }
+  #hint kbd { background:var(--panel2); border:1px solid var(--line); border-radius:4px; padding:0 4px; font:11px ui-monospace, Menlo, monospace; }
+
+  #grid { flex:1; min-height:0; display:grid; gap:8px; padding:8px; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); grid-auto-rows:minmax(0, 1fr); overflow:auto; }
+  body.solo #grid { grid-template-columns: 1fr 240px; grid-template-rows: repeat(6, minmax(0,1fr)); grid-auto-flow: row; }
+  body.solo .tile.active { grid-column:1; grid-row:1 / span 6; }
+  body.solo .tile:not(.active) { grid-column:2; }
+  @media (max-width: 800px) { body.solo #grid { grid-template-columns:1fr; grid-template-rows:auto; } body.solo .tile:not(.active){ display:none; } }
+
+  .tile { position:relative; background:#000; border:2px solid var(--line); border-radius:8px; overflow:hidden; min-height:160px; display:flex; }
+  .tile.active { border-color:var(--acc); }
+  .tile.capture { border-color:var(--ok); box-shadow:0 0 0 1px var(--ok) inset; }
+  .tile video { width:100%; height:100%; object-fit:contain; background:#000; display:block; outline:none; }
+  .tile.capture video { cursor:none; }
+  .tile.capture.showcursor video { cursor:crosshair; }
+  .bar { position:absolute; left:0; right:0; top:0; display:flex; gap:5px; align-items:center; flex-wrap:wrap; padding:5px 7px; background:linear-gradient(#000c, #0000); pointer-events:none; }
+  .bar > * { pointer-events:auto; }
+  .bar .name { font-weight:600; margin-right:4px; text-shadow:0 1px 2px #000; }
+  .bar button { padding:2px 7px; font-size:12px; background:#000a; }
+  .pill { padding:1px 7px; border-radius:999px; font-size:11px; border:1px solid #fff3; color:#ccd; background:#0008; }
+  .pill.ok { color:var(--ok); border-color:#3ecf8e88; } .pill.bad { color:var(--bad); border-color:#f2555a88; } .pill.warn { color:var(--warn); border-color:#f5a52488; }
+  .center { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; color:var(--dim); pointer-events:none; padding:20px; }
+  .num { position:absolute; right:7px; bottom:5px; font:600 12px ui-monospace, Menlo, monospace; color:#fff8; pointer-events:none; }
+
+  dialog { background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:10px; padding:16px; width:min(420px, 92vw); }
+  dialog::backdrop { background:#0009; }
+  dialog h3 { margin:0 0 10px; }
+  dialog label { display:block; color:var(--dim); margin:8px 0 3px; }
+  dialog input { width:100%; }
+  dialog .row { display:flex; gap:8px; justify-content:flex-end; margin-top:14px; }
+  #empty { grid-column:1/-1; align-self:center; justify-self:center; color:var(--dim); text-align:center; max-width:460px; }
+</style>
+</head>
+<body>
+<header>
+  <b>uplaj</b>
+  <input id="user" placeholder="adın" size="9" title="Diğer kişiler kontrolün kimde olduğunu bu isimle görür">
+  <button id="add" class="primary">+ Makine</button>
+  <button id="takeAll">Hepsini al</button>
+  <button id="releaseAll">Hepsini bırak</button>
+  <span class="sp"></span>
+  <select id="mode" title="Fare modu"><option value="abs">Fare: ekrandaki nokta</option><option value="rel">Fare: kilitli (kamera)</option></select>
+  <label class="chk"><input type="checkbox" id="cmdctrl"> Cmd = Ctrl</label>
+  <button id="solo" title="Seçili makineyi büyüt / grid'e dön">Büyüt</button>
+  <button id="share" title="Makine listesini ortağına göndermek için kopyala / yapıştır">Liste</button>
+  <button id="upd" title="İnternetteki son sürümü bütün makinelere kur (Shift+tık: exe dosyası seç)">Güncelle</button>
+  <input type="file" id="updFile" accept=".exe" hidden>
+</header>
+<div id="hint">
+  Makineye <b>tıkla</b>: seçilir ve kontrol başlar (yeşil çerçeve). <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>1–9</kbd>: makine değiştir ·
+  <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>0</kbd>: kontrolü bırak (klavye serbest) · Kilitli fare modunda çıkmak için <kbd>Esc</kbd>
+</div>
+<main id="grid"></main>
+
+<dialog id="dlg">
+  <h3 id="dlgTitle">Makine ekle</h3>
+  <label>İsim</label><input id="fName" placeholder="kvm1">
+  <label>Adres</label><input id="fUrl" placeholder="http://10.10.10.181:8780 veya https://kvm1.alanadi.com">
+  <label>Erişim kodu</label><input id="fToken" placeholder="uplaj-agent penceresinde yazar">
+  <div class="row"><button id="fDel" style="margin-right:auto;color:var(--bad)">Sil</button><button id="fCancel">Vazgeç</button><button id="fSave" class="primary">Kaydet</button></div>
+</dialog>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d){ try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+
+// ---------- HID tuş kodları (KeyboardEvent.code -> USB HID usage)
+const HID = {};
+"abcdefghijklmnopqrstuvwxyz".split("").forEach((c,i)=> HID["Key"+c.toUpperCase()] = 0x04+i);
+"1234567890".split("").forEach((c,i)=> HID["Digit"+c] = 0x1E+i);
+for (let i=1;i<=12;i++) HID["F"+i] = 0x39+i;
+for (let i=1;i<=9;i++) HID["Numpad"+i] = 0x58+i;
+Object.assign(HID, {
+  Enter:0x28, Escape:0x29, Backspace:0x2A, Tab:0x2B, Space:0x2C, Minus:0x2D, Equal:0x2E,
+  BracketLeft:0x2F, BracketRight:0x30, Backslash:0x31, Semicolon:0x33, Quote:0x34, Backquote:0x35,
+  Comma:0x36, Period:0x37, Slash:0x38, CapsLock:0x39, PrintScreen:0x46, ScrollLock:0x47, Pause:0x48,
+  Insert:0x49, Home:0x4A, PageUp:0x4B, Delete:0x4C, End:0x4D, PageDown:0x4E,
+  ArrowRight:0x4F, ArrowLeft:0x50, ArrowDown:0x51, ArrowUp:0x52, NumLock:0x53,
+  NumpadDivide:0x54, NumpadMultiply:0x55, NumpadSubtract:0x56, NumpadAdd:0x57, NumpadEnter:0x58,
+  Numpad0:0x62, NumpadDecimal:0x63, IntlBackslash:0x64, ContextMenu:0x65,
+  ControlLeft:0xE0, ShiftLeft:0xE1, AltLeft:0xE2, ControlRight:0xE4, ShiftRight:0xE5, AltRight:0xE6,
+});
+const u16 = v => { v &= 0xFFFF; return [v & 0xFF, v >> 8]; };
+
+// ---------- Ayarlar
+let machines = store.get("uplaj.machines", []);
+$("user").value = store.get("uplaj.user", "");
+$("mode").value = store.get("uplaj.mode", "abs");
+$("cmdctrl").checked = store.get("uplaj.cmdctrl", false);
+const me = () => $("user").value.trim() || "isimsiz";
+$("user").onchange = () => { store.set("uplaj.user", $("user").value.trim()); conns.forEach(c => c.reconnect()); };
+$("mode").onchange = () => { store.set("uplaj.mode", $("mode").value); stopCapture(); };
+$("cmdctrl").onchange = () => store.set("uplaj.cmdctrl", $("cmdctrl").checked);
+const saveMachines = () => store.set("uplaj.machines", machines.map(({id,name,url,token}) => ({id,name,url,token})));
+
+// ---------- Makine bağlantısı
+class Conn {
+  constructor(m, index){
+    this.m = m; this.index = index;
+    this.status = {}; this.isOwner = false; this.rtts = []; this.pending = new Map(); this.seq = 1;
+    this.path = ""; this.fps = 0; this.res = ""; this.closed = false;
+    this.buildTile();
+    this.connect();
+    this.pingTimer = setInterval(() => this.ping(), 500);
+    this.statsTimer = setInterval(() => this.stats(), 2000);
+  }
+  buildTile(){
+    const t = document.createElement("div");
+    t.className = "tile";
+    t.innerHTML = `<video autoplay playsinline muted tabindex="0"></video>
+      <div class="center">bağlanıyor…</div>
+      <div class="bar"><span class="name"></span><span class="p-conn pill">…</span><span class="p-esp pill">kart</span>
+        <span class="p-own pill">kontrol</span><span class="p-rtt pill">– ms</span><span class="p-path pill" title="bağlantı yolu"></span><span class="p-ver pill" title="program sürümü"></span>
+        <span class="sp" style="flex:1"></span><button class="b-take">Kontrolü al</button><button class="b-edit" title="Düzenle">⚙</button></div>
+      <div class="num"></div>`;
+    this.tile = t; this.video = t.querySelector("video"); this.center = t.querySelector(".center");
+    t.querySelector(".name").textContent = this.m.name;
+    t.querySelector(".num").textContent = this.index + 1;
+    t.querySelector(".b-take").onclick = e => { e.stopPropagation(); this.take(); };
+    t.querySelector(".b-edit").onclick = e => { e.stopPropagation(); openDialog(this.m); };
+    t.addEventListener("mousedown", e => onTileMouseDown(this, e));
+    t.addEventListener("dblclick", e => { if (!capture) { e.preventDefault(); setActive(this); toggleSolo(true); } });
+    $("grid").appendChild(t);
+  }
+  pill(cls, text, state){ const el = this.tile.querySelector("."+cls); el.textContent = text; el.className = cls + " pill " + (state||""); }
+
+  connect(){
+    if (this.closed) return;
+    const base = this.m.url.replace(/\/+$/, "").replace(/^http/, "ws");
+    let ws;
+    try { ws = new WebSocket(`${base}/ws?token=${encodeURIComponent(this.m.token)}&user=${encodeURIComponent(me())}`); }
+    catch (e) { this.pill("p-conn", "adres hatalı", "bad"); return; }
+    this.ws = ws; ws.binaryType = "arraybuffer";
+    this.pill("p-conn", "bağlanıyor", "warn");
+    ws.onopen = () => { this.pill("p-conn", "bağlı", "ok"); this.center.textContent = "görüntü bekleniyor…"; };
+    ws.onclose = () => {
+      if (this.ws !== ws) return;
+      this.pill("p-conn", "bağlı değil", "bad"); this.isOwner = false; this.updateOwner();
+      this.center.style.display = ""; this.center.textContent = "bağlantı yok — yeniden deneniyor (adres / erişim kodu / program açık mı?)";
+      this.closePC();
+      clearTimeout(this.retry); this.retry = setTimeout(() => this.connect(), 2500);
+    };
+    ws.onmessage = ev => typeof ev.data === "string" ? this.onJSON(JSON.parse(ev.data)) : this.onBinary(new Uint8Array(ev.data));
+  }
+  reconnect(){ clearTimeout(this.retry); if (this.ws) { const w = this.ws; this.ws = null; w.close(); } this.closePC(); this.connect(); }
+  close(){ this.closed = true; clearInterval(this.pingTimer); clearInterval(this.statsTimer); clearTimeout(this.retry); if (this.ws) { const w=this.ws; this.ws=null; w.close(); } this.closePC(); this.tile.remove(); }
+  closePC(){ if (this.pc) { this.pc.close(); this.pc = null; this.dc = null; } }
+
+  async onJSON(s){
+    if (s.type === "hello") { this.ice = s.ice || []; if (!this.paused) this.startWebRTC(this.ice); }
+    else if (s.type === "answer") { try { await this.pc.setRemoteDescription({type:"answer", sdp:s.sdp}); } catch (e) { console.warn(e); } }
+    else if (s.type === "status") {
+      this.status = s;
+      if (!this.updating) this.pill("p-ver", "v" + s.version);
+      autoUpdate();
+      if (s.espState) this.pill("p-esp", "kart: " + s.espState, "warn");
+      else this.pill("p-esp", s.esp ? "kart ✓" : "kart takılı değil", s.esp ? "ok" : "bad");
+      this.isOwner = s.owner === me();
+      this.ownerName = s.owner;
+      this.updateOwner();
+      if (!s.video) { this.center.style.display = ""; this.center.textContent = "Bu makinede ffmpeg yok — görüntü gelmez, klavye/fare çalışır."; }
+    }
+  }
+  updateOwner(){
+    const o = this.ownerName;
+    this.pill("p-own", o ? (this.isOwner ? "kontrol: sen" : "kontrol: " + o) : "kontrol: boşta", this.isOwner ? "ok" : o ? "warn" : "");
+    this.tile.querySelector(".b-take").style.display = this.isOwner ? "none" : "";
+  }
+  onBinary(d){
+    if ((d[0] === 0x90 || d[0] === 0x9F) && d.length >= 5) {
+      const id = (d[1] | d[2]<<8 | d[3]<<16 | d[4]<<24) >>> 0;
+      const t0 = this.pending.get(id); if (t0 === undefined) return;
+      this.pending.delete(id);
+      if (d[0] === 0x9F) return;
+      const ms = performance.now() - t0;
+      this.rtts.push(ms); if (this.rtts.length > 20) this.rtts.shift();
+      const avg = this.rtts.reduce((a,b)=>a+b,0) / this.rtts.length;
+      this.pill("p-rtt", avg.toFixed(0) + " ms", avg < 30 ? "ok" : avg < 70 ? "warn" : "bad");
+    }
+  }
+
+  async startWebRTC(iceServers){
+    this.closePC();
+    const pc = new RTCPeerConnection({ iceServers });
+    this.pc = pc;
+    pc.addTransceiver("video", { direction: "recvonly" });
+    const dc = pc.createDataChannel("input", { ordered: true });
+    dc.binaryType = "arraybuffer";
+    dc.onopen = () => { if (this.pc === pc) this.dc = dc; };
+    dc.onmessage = ev => this.onBinary(new Uint8Array(ev.data));
+    pc.ontrack = ev => {
+      try { ev.receiver.jitterBufferTarget = 0; } catch {}
+      try { ev.receiver.playoutDelayHint = 0; } catch {}
+      this.video.srcObject = ev.streams[0] || new MediaStream([ev.track]);
+      this.video.onloadeddata = () => { this.center.style.display = "none"; };
+    };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === "failed") {
+        this.center.style.display = ""; this.center.textContent = "görüntü bağlantısı kurulamadı (ağ engelliyor olabilir — TURN gerekli). Klavye/fare yine çalışır.";
+        this.pill("p-path", "yol yok", "bad");
+      }
+    };
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await new Promise(res => {
+      if (pc.iceGatheringState === "complete") return res();
+      const t = setTimeout(res, 2500);
+      pc.addEventListener("icegatheringstatechange", () => { if (pc.iceGatheringState === "complete") { clearTimeout(t); res(); } });
+    });
+    if (this.pc !== pc || !this.ws || this.ws.readyState !== 1) return;
+    this.ws.send(JSON.stringify({ type: "offer", sdp: pc.localDescription.sdp }));
+    if (active === this) this.sendJSON({ type: "focus", on: true });
+  }
+
+  sendJSON(o){ if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(o)); }
+  sendRaw(bytes){
+    const b = new Uint8Array(bytes);
+    if (this.dc && this.dc.readyState === "open") this.dc.send(b);
+    else if (this.ws && this.ws.readyState === 1) this.ws.send(b);
+  }
+  send(...bytes){ if (this.isOwner) this.sendRaw(bytes); }
+  take(){ this.sendJSON({ type: "take" }); }
+  release(){ this.sendJSON({ type: "release" }); }
+  ping(){
+    if (!this.ws || this.ws.readyState !== 1) return;
+    // WebSocket'i canlı tut (pingler veri kanalından gidince ws sessiz kalıyor)
+    if ((this.kaTick = (this.kaTick || 0) + 1) % 6 === 0) this.sendJSON({ type: "keepalive" });
+    for (const [id, t] of this.pending) if (performance.now() - t > 3000) this.pending.delete(id);
+    const id = this.seq++ >>> 0;
+    this.pending.set(id, performance.now());
+    this.sendRaw([0x10, id & 0xFF, (id>>8)&0xFF, (id>>16)&0xFF, (id>>>24)&0xFF]);
+  }
+  async stats(){
+    if (!this.pc) return;
+    try {
+      const st = await this.pc.getStats(); let pair, local, remote, inb;
+      st.forEach(r => { if (r.type === "transport" && r.selectedCandidatePairId) pair = st.get(r.selectedCandidatePairId); });
+      if (!pair) st.forEach(r => { if (r.type === "candidate-pair" && r.nominated && r.state === "succeeded") pair = r; });
+      st.forEach(r => { if (r.type === "inbound-rtp" && r.kind === "video") inb = r; });
+      if (pair) { local = st.get(pair.localCandidateId); remote = st.get(pair.remoteCandidateId); }
+      if (local && remote) {
+        const relay = local.candidateType === "relay" || remote.candidateType === "relay";
+        const host = local.candidateType === "host" && remote.candidateType === "host";
+        this.pill("p-path", relay ? "TURN" : host ? "yerel ağ" : "doğrudan", relay ? "warn" : "ok");
+      }
+      if (inb) {
+        const fps = inb.framesPerSecond || 0, w = inb.frameWidth, h = inb.frameHeight;
+        this.pill("p-path", (this.tile.querySelector(".p-path").textContent.split(" ·")[0] || "") + (w ? ` · ${w}×${h} ${fps|0}fps` : ""), this.tile.querySelector(".p-path").className.split(" ").pop());
+      }
+    } catch {}
+  }
+}
+
+// ---------- Seçim, büyütme, kontrol
+let conns = [];
+let active = null, capture = false, swallow = false;
+const held = new Set();
+
+function rebuild(){
+  conns.forEach(c => c.close());
+  $("grid").innerHTML = "";
+  if (!machines.length) {
+    $("grid").innerHTML = `<div id="empty"><h3>Henüz makine yok</h3>Sağ üstteki <b>+ Makine</b> ile oyun PC'lerini ekle.
+      Her PC'nin adresi ve erişim kodu, o PC'de açık olan uplaj-agent penceresinde yazar.<br><br>
+      Liste kodun varsa <b>Liste</b>'ye basıp yapıştır, bütün makineler tek seferde eklenir.</div>`;
+  }
+  conns = machines.map((m, i) => new Conn(m, i));
+  active = null; capture = false;
+  if (conns.length) setActive(conns[0], false);
+}
+
+function setActive(c, focusVideo = true){
+  if (active === c) return;
+  if (active) { releaseKeys(); active.tile.classList.remove("active", "capture"); active.sendJSON({ type: "focus", on: false }); }
+  stopCapture();
+  active = c;
+  if (!c) return;
+  c.tile.classList.add("active");
+  c.sendJSON({ type: "focus", on: true });
+  if (focusVideo) c.video.focus();
+}
+
+function toggleSolo(force){
+  const on = force === undefined ? !document.body.classList.contains("solo") : force;
+  document.body.classList.toggle("solo", on);
+  $("solo").textContent = on ? "Grid" : "Büyüt";
+}
+$("solo").onclick = () => toggleSolo();
+
+function startCapture(){
+  if (!active) return;
+  capture = true;
+  active.tile.classList.add("capture");
+  active.tile.classList.toggle("showcursor", $("mode").value === "abs");
+  active.video.focus();
+  if ($("mode").value === "rel" && !document.pointerLockElement) {
+    active.video.requestPointerLock({ unadjustedMovement: true }).catch(() => active.video.requestPointerLock());
+  }
+}
+function stopCapture(){
+  if (capture) releaseKeys();
+  capture = false;
+  conns.forEach(c => c.tile.classList.remove("capture"));
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+function releaseKeys(){ held.clear(); if (active) active.send(0x07); }
+
+function onTileMouseDown(c, e){
+  if (e.target.closest("button")) return;
+  // seçme/başlatma tıklaması oyuna tıklama olarak gitmesin
+  if (active !== c) { swallow = true; setActive(c); e.preventDefault(); if (!c.ownerName) c.take(); startCapture(); return; }
+  if (!capture) { swallow = true; e.preventDefault(); if (!c.ownerName) c.take(); startCapture(); return; }
+}
+
+document.addEventListener("pointerlockchange", () => { if (!document.pointerLockElement && $("mode").value === "rel") stopCapture(); });
+window.addEventListener("blur", stopCapture);
+// Sekme 20 sn gizli kalırsa görüntüyü durdur (TURN kotası harcanmasın), geri gelince devam et
+let hideTimer = null;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    stopCapture();
+    hideTimer = setTimeout(() => conns.forEach(c => { c.sendJSON({ type: "pause" }); c.closePC(); c.paused = true; }), 20000);
+  } else {
+    clearTimeout(hideTimer);
+    if (!idlePaused) conns.forEach(c => { if (c.paused) { c.paused = false; c.reconnect(); } });
+  }
+});
+// Kimse kullanmıyorsa (açık bırakılıp gidildiyse) 10 dk sonra görüntüyü durdur.
+// Fare/klavye hareketiyle geri gelir. Kontrol eden varken (capture) durmaz.
+const IDLE_MS = 10 * 60 * 1000;
+let lastActivity = Date.now(), idlePaused = false;
+const idleBox = document.createElement("div");
+idleBox.style.cssText = "position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:#000c;z-index:50;font-size:18px;color:#fff;text-align:center;cursor:pointer";
+idleBox.innerHTML = "Görüntü durduruldu (10 dk hareket yok, kota harcanmasın).<br><br><b>Devam etmek için tıkla</b>";
+document.body.appendChild(idleBox);
+function activity(){
+  lastActivity = Date.now();
+  if (idlePaused) {
+    idlePaused = false; idleBox.style.display = "none";
+    if (!document.hidden) conns.forEach(c => { if (c.paused) { c.paused = false; c.reconnect(); } });
+  }
+}
+["mousemove", "mousedown", "keydown", "wheel", "touchstart"].forEach(t => document.addEventListener(t, activity, { passive: true, capture: true }));
+setInterval(() => {
+  if (idlePaused || capture || Date.now() - lastActivity < IDLE_MS) return;
+  idlePaused = true; idleBox.style.display = "flex";
+  conns.forEach(c => { c.sendJSON({ type: "pause" }); c.closePC(); c.paused = true; });
+}, 15000);
+document.addEventListener("contextmenu", e => { if (e.target.closest(".tile")) e.preventDefault(); });
+document.addEventListener("mousedown", e => { if (capture && !e.target.closest(".tile")) stopCapture(); });
+
+// Fare
+function videoPoint(c, e){
+  const v = c.video, r = v.getBoundingClientRect();
+  const vw = v.videoWidth || 16, vh = v.videoHeight || 9;
+  const s = Math.min(r.width / vw, r.height / vh);
+  const w = vw * s, h = vh * s, ox = r.left + (r.width - w) / 2, oy = r.top + (r.height - h) / 2;
+  return [Math.min(1, Math.max(0, (e.clientX - ox) / w)), Math.min(1, Math.max(0, (e.clientY - oy) / h))];
+}
+document.addEventListener("mousemove", e => {
+  if (!capture || !active) return;
+  if ($("mode").value === "rel") {
+    if (e.movementX || e.movementY) active.send(0x04, ...u16(e.movementX), ...u16(e.movementY));
+  } else if (e.target.closest(".tile") === active.tile) {
+    const [x, y] = videoPoint(active, e);
+    active.send(0x03, ...u16(Math.round(x * 32767)), ...u16(Math.round(y * 32767)));
+  }
+});
+const btn = e => { if (swallow) { if (e.type === "mouseup") swallow = false; return; } if (!capture || !active) return; if ($("mode").value === "abs" && e.target.closest(".tile") !== active.tile) return; e.preventDefault(); active.send(0x05, e.buttons & 0x1F); };
+document.addEventListener("mousedown", btn);
+document.addEventListener("mouseup", btn);
+let wheelAcc = 0;
+document.addEventListener("wheel", e => {
+  if (!capture || !active) return;
+  e.preventDefault();
+  wheelAcc += e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+  while (Math.abs(wheelAcc) >= 100) { const s = wheelAcc > 0 ? -1 : 1; active.send(0x06, s & 0xFF); wheelAcc += s * 100; }
+}, { passive: false });
+
+// Klavye
+function usageOf(e){
+  if (e.code === "MetaLeft" || e.code === "MetaRight") return $("cmdctrl").checked ? 0xE0 : 0;
+  return HID[e.code] || 0;
+}
+document.addEventListener("keydown", e => {
+  // Kısayollar: Ctrl+Alt+1..9 makine seç, Ctrl+Alt+0 kontrolü bırak
+  if (e.ctrlKey && e.altKey && /^Digit\d$/.test(e.code)) {
+    e.preventDefault();
+    const n = +e.code.slice(5);
+    if (n === 0) { stopCapture(); return; }
+    const c = conns[n - 1];
+    if (c) { setActive(c); if (!c.ownerName) c.take(); startCapture(); }
+    return;
+  }
+  if (!capture || !active) return;
+  e.preventDefault();
+  const u = usageOf(e); if (!u || held.has(u)) return;
+  held.add(u); active.send(0x01, u);
+});
+document.addEventListener("keyup", e => {
+  if (!capture || !active) return;
+  e.preventDefault();
+  if (e.code === "MetaLeft" || e.code === "MetaRight") {
+    for (const h of [...held]) if (h < 0xE0) { held.delete(h); active.send(0x02, h); }
+  }
+  const u = usageOf(e); if (!u) return;
+  held.delete(u); active.send(0x02, u);
+});
+
+// ---------- Üst butonlar
+$("takeAll").onclick = () => conns.forEach(c => c.take());
+$("releaseAll").onclick = () => { stopCapture(); conns.forEach(c => c.release()); };
+$("share").onclick = () => {
+  const code = btoa(unescape(encodeURIComponent(JSON.stringify(machines.map(({name,url,token}) => ({name,url,token}))))));
+  const input = prompt("Bu kodu ortağına gönder. Ortağın kendi panelinde 'Liste'ye basıp bu kutuya yapıştırınca bütün makineler eklenir.\n\nBaşkasından kod aldıysan buraya yapıştırıp Tamam'a bas:", code);
+  if (!input || input === code) return;
+  try {
+    const list = JSON.parse(decodeURIComponent(escape(atob(input.trim()))));
+    if (!Array.isArray(list)) throw 0;
+    machines = list.map((m, i) => ({ id: Date.now() + i, name: String(m.name), url: String(m.url), token: String(m.token) }));
+    saveMachines(); rebuild();
+  } catch { alert("Kod okunamadı."); }
+};
+
+// ---------- Makine ekle / düzenle
+let editing = null;
+function openDialog(m){
+  stopCapture();
+  editing = m || null;
+  $("dlgTitle").textContent = m ? "Makineyi düzenle" : "Makine ekle";
+  $("fName").value = m ? m.name : "kvm" + (machines.length + 1);
+  const onAgent = location.protocol.startsWith("http") && !location.hostname.endsWith("github.io");
+  $("fUrl").value = m ? m.url : (machines.length || !onAgent ? "" : location.origin);
+  $("fToken").value = m ? m.token : "";
+  $("fDel").style.display = m ? "" : "none";
+  $("dlg").showModal();
+}
+$("add").onclick = () => openDialog(null);
+$("fCancel").onclick = () => $("dlg").close();
+$("fDel").onclick = () => { if (editing && confirm(editing.name + " silinsin mi?")) { machines = machines.filter(x => x !== editing); saveMachines(); $("dlg").close(); rebuild(); } };
+$("fSave").onclick = () => {
+  let url = $("fUrl").value.trim();
+  if (url && !/^https?:\/\//.test(url)) url = "http://" + url;
+  if (/^http:\/\/[\d.]+$/.test(url)) url += ":8780";
+  const m = { id: editing ? editing.id : Date.now(), name: $("fName").value.trim() || "makine", url, token: $("fToken").value.trim() };
+  if (!m.url || !m.token) { alert("Adres ve erişim kodu gerekli."); return; }
+  if (location.protocol === "https:" && m.url.startsWith("http:")) alert("Uyarı: Bu panel https ile açık; http:// adreslere tarayıcı izin vermez. Paneli http:// adresten aç ya da makineye https adresi ver.");
+  machines = editing ? machines.map(x => x === editing ? m : x) : [...machines, m];
+  saveMachines(); $("dlg").close(); rebuild();
+};
+
+// ---------- Güncelleme
+// Bir makinede daha yeni sürüm varsa, eski olanlar onu kendisi çeker (otomatik).
+const verNewer = (a, b) => { const x = String(a).split(".").map(Number), y = String(b).split(".").map(Number);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) { if ((x[i]||0) !== (y[i]||0)) return (x[i]||0) > (y[i]||0); } return false; };
+const apiBase = m => m.url.replace(/\/+$/, "");
+const triedPull = new Set();
+async function updateCall(c, path, body){
+  c.updating = true; c.pill("p-ver", "güncelleniyor…", "warn");
+  try {
+    const r = await fetch(apiBase(c.m) + path, { method: "POST", headers: { "X-Uplaj-Token": c.m.token, "Content-Type": "application/octet-stream" }, body });
+    const t = await r.text();
+    if (!r.ok) throw new Error(t.trim());
+    const j = JSON.parse(t);
+    c.pill("p-ver", "v" + j.to + " — yeniden başlıyor", "ok");
+    setTimeout(() => { c.updating = false; }, 20000);
+  } catch (e) {
+    c.updating = false;
+    c.pill("p-ver", "güncellenemedi", "bad");
+    c.tile.querySelector(".p-ver").title = String(e.message || e);
+  }
+}
+function autoUpdate(){
+  const live = conns.filter(c => c.status.version && c.ws && c.ws.readyState === 1);
+  if (live.length < 2) return;
+  const src = live.reduce((a, b) => verNewer(b.status.version, a.status.version) ? b : a);
+  for (const c of live) {
+    if (c === src || c.updating || !verNewer(src.status.version, c.status.version)) continue;
+    if (!verNewer(c.status.version, "0.3.9")) continue; // 0.3.x güncellemeyi bilmez, elle kopyalanmalı
+    const key = c.m.id + ">" + src.status.version;
+    if (triedPull.has(key)) continue;
+    triedPull.add(key);
+    updateCall(c, `/update/pull?from=${encodeURIComponent(apiBase(src.m))}&fromToken=${encodeURIComponent(src.m.token)}`, null);
+  }
+}
+$("upd").onclick = e => {
+  stopCapture();
+  if (e.shiftKey) { $("updFile").value = ""; $("updFile").click(); return; }
+  const live = conns.filter(c => c.status.version && c.ws && c.ws.readyState === 1);
+  if (!live.length) { alert("Bağlı makine yok."); return; }
+  const old = live.filter(c => !verNewer(c.status.version, "0.4.1"));
+  if (old.length) alert(old.map(c => c.m.name).join(", ") + " bu butonu bilmiyor; programı kapatıp açman yeterli, açılışta kendisi güncellenir.");
+  const ok = live.filter(c => !old.includes(c));
+  if (!ok.length) return;
+  if (!confirm("İnternetteki son sürüm şu makinelere kurulsun mu?\n" + ok.map(c => c.m.name + " (v" + c.status.version + ")").join("\n") + "\n\nGüncel olanlar dokunulmadan kalır.")) return;
+  ok.forEach(async c => {
+    c.updating = true; c.pill("p-ver", "kontrol ediliyor…", "warn");
+    try {
+      const r = await fetch(apiBase(c.m) + "/update/online", { method: "POST", headers: { "X-Uplaj-Token": c.m.token } });
+      const t = (await r.text()).trim();
+      if (r.ok) { c.pill("p-ver", "v" + JSON.parse(t).to + " — yeniden başlıyor", "ok"); setTimeout(() => { c.updating = false; }, 20000); }
+      else { c.updating = false; c.pill("p-ver", t.startsWith("zaten güncel") ? "v" + c.status.version + " ✓ güncel" : "güncellenemedi", t.startsWith("zaten güncel") ? "ok" : "bad"); c.tile.querySelector(".p-ver").title = t; }
+    } catch (err) { c.updating = false; c.pill("p-ver", "güncellenemedi", "bad"); c.tile.querySelector(".p-ver").title = String(err); }
+  });
+};
+$("updFile").onchange = async () => {
+  const f = $("updFile").files[0]; if (!f) return;
+  const buf = new Uint8Array(await f.arrayBuffer());
+  const txt = new TextDecoder("latin1").decode(buf);
+  const m = /UPLAJVER:(\d+\.\d+\.\d+);/.exec(txt);
+  if (!m) { alert("Bu dosya uplaj-agent.exe değil."); return; }
+  const v = m[1];
+  const targets = conns.filter(c => c.status.version && verNewer(v, c.status.version));
+  const old = targets.filter(c => !verNewer(c.status.version, "0.3.9"));
+  if (old.length) alert(old.map(c => c.m.name).join(", ") + " eski sürümde (0.3), bunlara exe'yi bir kez elle kopyalaman lazım. Sonrakiler otomatik.");
+  const ok = targets.filter(c => !old.includes(c));
+  if (!ok.length) { if (!old.length) alert("Bağlı makinelerin hepsi zaten v" + v + " veya daha yeni."); return; }
+  if (!confirm(`v${v} şu makinelere yüklensin mi?\n${ok.map(c => c.m.name + " (v" + c.status.version + ")").join("\n")}\n\nProgram kendini yeniden başlatır (birkaç saniye).`)) return;
+  ok.forEach(c => updateCall(c, "/update/upload", buf));
+};
+
+// İlk açılış: panel bir ajandan açıldıysa ve liste boşsa, bu makineyi önermek için pencereyi aç
+rebuild();
+if (!machines.length && location.protocol.startsWith("http") && !location.hostname.endsWith("github.io")) openDialog(null);
+</script>
+</body>
+</html>
