@@ -249,7 +249,7 @@ class Conn {
     catch (e) { this.pill("p-conn", "adres hatalı", "bad"); return; }
     this.ws = ws; ws.binaryType = "arraybuffer";
     this.pill("p-conn", "bağlanıyor", "warn");
-    ws.onopen = () => { this.pill("p-conn", "bağlı", "ok"); this.center.textContent = "görüntü bekleniyor…"; };
+    ws.onopen = () => { this.pill("p-conn", "bağlı", "ok"); this.center.textContent = "görüntü bekleniyor…"; if (liteMode) this.sendJSON({ type: "lite", on: true }); };
     ws.onclose = () => {
       if (this.ws !== ws) return;
       this.pill("p-conn", "bağlı değil", "bad"); this.isOwner = false; this.updateOwner();
@@ -494,26 +494,26 @@ document.addEventListener("visibilitychange", () => {
     if (!idlePaused) conns.forEach(c => { if (c.paused && !c.off) { c.paused = false; c.reconnect(); } });
   }
 });
-// Kimse kullanmıyorsa (açık bırakılıp gidildiyse) 10 dk sonra görüntüyü durdur.
-// Fare/klavye hareketiyle geri gelir. Kontrol eden varken (capture) durmaz.
+// Kimse kullanmıyorsa 10 dk sonra İZLEME MODU: görüntü durmaz, saniyede 2 kare
+// küçük görüntüye geçer (DC kontrolü için yeterli, çok az kota). Hareket edince normale döner.
 const IDLE_MS = 10 * 60 * 1000;
-let lastActivity = Date.now(), idlePaused = false;
-const idleBox = document.createElement("div");
-idleBox.style.cssText = "position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:#000c;z-index:50;font-size:18px;color:#fff;text-align:center;cursor:pointer";
-idleBox.innerHTML = "Görüntü durduruldu (10 dk hareket yok, kota harcanmasın).<br><br><b>Devam etmek için tıkla</b>";
-document.body.appendChild(idleBox);
+let lastActivity = Date.now(), idlePaused = false, liteMode = false;
+const liteBar = document.createElement("div");
+liteBar.style.cssText = "position:fixed;left:50%;bottom:10px;transform:translateX(-50%);display:none;background:#f5a524;color:#000;font-weight:600;padding:5px 12px;border-radius:999px;z-index:50;font-size:12px;pointer-events:none";
+liteBar.textContent = "İzleme modu: saniyede 2 kare (kota tasarrufu) — fareyi oynatınca normale döner";
+document.body.appendChild(liteBar);
+function setLite(on){
+  liteMode = on; liteBar.style.display = on ? "" : "none";
+  conns.forEach(c => c.sendJSON({ type: "lite", on }));
+}
 function activity(){
   lastActivity = Date.now();
-  if (idlePaused) {
-    idlePaused = false; idleBox.style.display = "none";
-    if (!document.hidden) conns.forEach(c => { if (c.paused && !c.off) { c.paused = false; c.reconnect(); } });
-  }
+  if (liteMode) setLite(false);
 }
 ["mousemove", "mousedown", "keydown", "wheel", "touchstart"].forEach(t => document.addEventListener(t, activity, { passive: true, capture: true }));
 setInterval(() => {
-  if (idlePaused || capture || Date.now() - lastActivity < IDLE_MS) return;
-  idlePaused = true; idleBox.style.display = "flex";
-  conns.forEach(c => { c.sendJSON({ type: "pause" }); c.closePC(); c.paused = true; });
+  if (liteMode || capture || Date.now() - lastActivity < IDLE_MS) return;
+  setLite(true);
 }, 15000);
 document.addEventListener("contextmenu", e => { if (e.target.closest(".tile")) e.preventDefault(); });
 document.addEventListener("mousedown", e => { if (capture && !e.target.closest(".tile")) stopCapture(); });
