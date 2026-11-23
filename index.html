@@ -200,7 +200,12 @@ class Conn {
 
   connect(){
     if (this.closed) return;
-    const base = this.m.url.replace(/\/+$/, "").replace(/^http/, "ws");
+    let u = this.m.url.trim().replace(/\/+$/, "");
+    if (!/^https?:\/\//.test(u)) u = (/^[\d.]+(:\d+)?$/.test(u) ? "http://" : "https://") + u;
+    // https sayfadan http alan adına bağlanılamaz; alan adıysa https'e çevir
+    if (location.protocol === "https:" && u.startsWith("http://") && !/^http:\/\/[\d.]+(:\d+)?$/.test(u)) u = "https://" + u.slice(7);
+    this.m.url = u;
+    const base = u.replace(/^http/, "ws");
     let ws;
     try { ws = new WebSocket(`${base}/ws?token=${encodeURIComponent(this.m.token)}&user=${encodeURIComponent(me())}`); }
     catch (e) { this.pill("p-conn", "adres hatalı", "bad"); return; }
@@ -557,7 +562,9 @@ $("fCancel").onclick = () => $("dlg").close();
 $("fDel").onclick = () => { if (editing && confirm(editing.name + " silinsin mi?")) { machines = machines.filter(x => x !== editing); saveMachines(); $("dlg").close(); rebuild(); } };
 $("fSave").onclick = () => {
   let url = $("fUrl").value.trim();
-  if (url && !/^https?:\/\//.test(url)) url = "http://" + url;
+  url = url.replace(/^(wss?|https?):?\/*/i, m => m.toLowerCase().startsWith("ws") ? "http" + m.slice(2).replace(/:?\/*$/, "://") : m.replace(/:?\/*$/, "://")).replace(/\/+$/, "");
+  // alan adı (ko1.hemenrandevum.com gibi) -> https, IP adresi -> http
+  if (url && !/^https?:\/\//.test(url)) url = (/^[\d.]+(:\d+)?$/.test(url) ? "http://" : "https://") + url;
   if (/^http:\/\/[\d.]+$/.test(url)) url += ":8780";
   const m = { id: editing ? editing.id : Date.now(), name: $("fName").value.trim() || "makine", url, token: $("fToken").value.trim(), otp: $("fOtp").value.trim() };
   let ou = $("fOtpUrl").value.trim(); if (ou && !/^https?:\/\//.test(ou)) ou = "https://" + ou;
