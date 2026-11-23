@@ -46,6 +46,10 @@
   dialog label { display:block; color:var(--dim); margin:8px 0 3px; }
   dialog input { width:100%; }
   dialog .row { display:flex; gap:8px; justify-content:flex-end; margin-top:14px; }
+  body.fixed:not(.solo) #grid { grid-template-columns:repeat(var(--cols), minmax(0,1fr)); grid-template-rows:repeat(var(--rows), minmax(0,1fr)); grid-auto-rows:0; overflow:hidden; }
+  .tile.off { display:none; }
+  #pager { display:none; gap:4px; align-items:center; color:var(--dim); }
+  body.fixed:not(.solo) #pager.many { display:flex; }
   #empty { grid-column:1/-1; align-self:center; justify-self:center; color:var(--dim); text-align:center; max-width:460px; }
 </style>
 </head>
@@ -59,6 +63,11 @@
   <span class="sp"></span>
   <select id="mode" title="Fare modu"><option value="abs">Fare: ekrandaki nokta</option><option value="rel">Fare: kilitli (kamera)</option></select>
   <label class="chk"><input type="checkbox" id="cmdctrl"> Cmd = Ctrl</label>
+  <select id="layout" title="Ekranda kaç makine görünsün">
+    <option value="auto">Düzen: otomatik</option><option value="1">1'li</option><option value="2">2'li</option>
+    <option value="4">4'lü</option><option value="6">6'lı</option><option value="8">8'li</option><option value="9">9'lu</option>
+  </select>
+  <span id="pager"><button id="pgPrev">‹</button><span id="pgText"></span><button id="pgNext">›</button></span>
   <button id="solo" title="Seçili makineyi büyüt / grid'e dön">Büyüt</button>
   <button id="share" title="Makine listesini ortağına göndermek için kopyala / yapıştır">Liste</button>
   <button id="upd" title="İnternetteki son sürümü bütün makinelere kur (Shift+tık: exe dosyası seç)">Güncelle</button>
@@ -289,6 +298,7 @@ function rebuild(){
   conns = machines.map((m, i) => new Conn(m, i));
   active = null; capture = false;
   if (conns.length) setActive(conns[0], false);
+  applyLayout();
 }
 
 function setActive(c, focusVideo = true){
@@ -302,10 +312,48 @@ function setActive(c, focusVideo = true){
   if (focusVideo) c.video.focus();
 }
 
+// ---------- Düzen: 1/2/4/6/8/9'lu, ekrana sığdır. Fazlası sonraki sayfada.
+// Ekranda olmayan makinelerin görüntüsü durdurulur (kota harcamasın).
+const LAYOUTS = { 1:[1,1], 2:[2,1], 4:[2,2], 6:[3,2], 8:[4,2], 9:[3,3] };
+let page = 0;
+$("layout").value = store.get("uplaj.layout", "auto");
+function applyLayout(){
+  const v = $("layout").value, L = LAYOUTS[v];
+  const solo = document.body.classList.contains("solo");
+  document.body.classList.toggle("fixed", !!L);
+  let per = conns.length;
+  if (L) {
+    let [cols, rows] = L;
+    if (innerHeight > innerWidth && cols > rows) [cols, rows] = [rows, cols]; // dik ekranda çevir
+    $("grid").style.setProperty("--cols", cols); $("grid").style.setProperty("--rows", rows);
+    per = cols * rows;
+  }
+  const pages = Math.max(1, Math.ceil(conns.length / per));
+  page = Math.min(page, pages - 1);
+  $("pager").classList.toggle("many", pages > 1);
+  $("pgText").textContent = `${page + 1}/${pages}`;
+  conns.forEach((c, i) => {
+    const off = !solo && !!L && Math.floor(i / per) !== page;
+    c.tile.classList.toggle("off", off);
+    if (off && !c.off) { c.off = true; c.sendJSON({ type: "pause" }); c.closePC(); c.paused = true; }
+    else if (!off && c.off) { c.off = false; if (c.paused && !idlePaused && !document.hidden) { c.paused = false; c.reconnect(); } }
+  });
+}
+function showConn(c){ // Ctrl+Alt+n ile başka sayfadaki makineye geçince o sayfaya git
+  const L = LAYOUTS[$("layout").value]; if (!L) return;
+  const np = Math.floor(conns.indexOf(c) / (L[0] * L[1]));
+  if (np !== page) { page = np; applyLayout(); }
+}
+$("layout").onchange = () => { store.set("uplaj.layout", $("layout").value); page = 0; applyLayout(); };
+$("pgPrev").onclick = () => { page = Math.max(0, page - 1); applyLayout(); };
+$("pgNext").onclick = () => { page++; applyLayout(); };
+addEventListener("resize", () => { if (LAYOUTS[$("layout").value]) applyLayout(); });
+
 function toggleSolo(force){
   const on = force === undefined ? !document.body.classList.contains("solo") : force;
   document.body.classList.toggle("solo", on);
   $("solo").textContent = on ? "Grid" : "Büyüt";
+  applyLayout();
 }
 $("solo").onclick = () => toggleSolo();
 
@@ -344,7 +392,7 @@ document.addEventListener("visibilitychange", () => {
     hideTimer = setTimeout(() => conns.forEach(c => { c.sendJSON({ type: "pause" }); c.closePC(); c.paused = true; }), 20000);
   } else {
     clearTimeout(hideTimer);
-    if (!idlePaused) conns.forEach(c => { if (c.paused) { c.paused = false; c.reconnect(); } });
+    if (!idlePaused) conns.forEach(c => { if (c.paused && !c.off) { c.paused = false; c.reconnect(); } });
   }
 });
 // Kimse kullanmıyorsa (açık bırakılıp gidildiyse) 10 dk sonra görüntüyü durdur.
@@ -359,7 +407,7 @@ function activity(){
   lastActivity = Date.now();
   if (idlePaused) {
     idlePaused = false; idleBox.style.display = "none";
-    if (!document.hidden) conns.forEach(c => { if (c.paused) { c.paused = false; c.reconnect(); } });
+    if (!document.hidden) conns.forEach(c => { if (c.paused && !c.off) { c.paused = false; c.reconnect(); } });
   }
 }
 ["mousemove", "mousedown", "keydown", "wheel", "touchstart"].forEach(t => document.addEventListener(t, activity, { passive: true, capture: true }));
@@ -411,7 +459,7 @@ document.addEventListener("keydown", e => {
     const n = +e.code.slice(5);
     if (n === 0) { stopCapture(); return; }
     const c = conns[n - 1];
-    if (c) { setActive(c); if (!c.ownerName) c.take(); startCapture(); }
+    if (c) { showConn(c); setActive(c); if (!c.ownerName) c.take(); startCapture(); }
     return;
   }
   if (!capture || !active) return;
