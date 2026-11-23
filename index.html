@@ -705,8 +705,10 @@ function pasteToRemote(c, txt){
   if (txt.length > 64) { flash(c, "pano çok uzun, yazılmadı"); return; }
   const bad = untypeable(txt);
   if (bad.length) { flash(c, "yazılamayan karakter: " + [...new Set(bad)].join(" ")); return; }
-  runSteps(c, [["text", txt]]);
-  flash(c, "✓ yapıştırıldı: " + (txt.length > 12 ? txt.slice(0, 12) + "…" : txt));
+  // Sadece rakamsa (OTP kodu) yazdıktan sonra Enter'a da bas
+  const otp = /^\d{4,8}$/.test(txt);
+  runSteps(c, otp ? [["text", txt], ["key", "Enter"]] : [["text", txt]]);
+  flash(c, (otp ? "✓ OTP girildi: " : "✓ yapıştırıldı: ") + (txt.length > 12 ? txt.slice(0, 12) + "…" : txt));
 }
 function flash(c, msg){
   const d = document.createElement("div");
