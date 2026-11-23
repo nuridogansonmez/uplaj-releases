@@ -50,6 +50,10 @@
   .tile.off { display:none; }
   #pager { display:none; gap:4px; align-items:center; color:var(--dim); }
   body.fixed:not(.solo) #pager.many { display:flex; }
+  .otpmenu { position:absolute; top:34px; right:8px; z-index:5; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:6px; min-width:220px; box-shadow:0 6px 20px #0008; }
+  .otpmenu button { display:block; width:100%; text-align:left; margin:2px 0; }
+  .otpmenu .hint { color:var(--dim); font-size:11px; padding:4px 2px; }
+  dialog textarea { width:100%; min-height:70px; background:#0b0d11; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 9px; font:12px ui-monospace, Menlo, monospace; }
   #empty { grid-column:1/-1; align-self:center; justify-self:center; color:var(--dim); text-align:center; max-width:460px; }
 </style>
 </head>
@@ -84,6 +88,9 @@
   <label>İsim</label><input id="fName" placeholder="kvm1">
   <label>Adres</label><input id="fUrl" placeholder="http://10.10.10.181:8780 veya https://kvm1.alanadi.com">
   <label>Erişim kodu</label><input id="fToken" placeholder="uplaj-agent penceresinde yazar">
+  <label>Karakterler ve OTP seed'leri (isteğe bağlı, her satıra bir tane)</label>
+  <textarea id="fOtp" placeholder="KarakterAdi = seed&#10;Okcu = 5dbe...&#10;Priest = 8a1c..."></textarea>
+  <label>OTP sitesi adresi (bütün makineler için aynı)</label><input id="fOtpUrl" placeholder="https://...">
   <div class="row"><button id="fDel" style="margin-right:auto;color:var(--bad)">Sil</button><button id="fCancel">Vazgeç</button><button id="fSave" class="primary">Kaydet</button></div>
 </dialog>
 
@@ -122,7 +129,42 @@ const me = () => $("user").value.trim() || "isimsiz";
 $("user").onchange = () => { store.set("uplaj.user", $("user").value.trim()); conns.forEach(c => c.reconnect()); };
 $("mode").onchange = () => { store.set("uplaj.mode", $("mode").value); stopCapture(); };
 $("cmdctrl").onchange = () => store.set("uplaj.cmdctrl", $("cmdctrl").checked);
-const saveMachines = () => store.set("uplaj.machines", machines.map(({id,name,url,token}) => ({id,name,url,token})));
+const saveMachines = () => store.set("uplaj.machines", machines.map(({id,name,url,token,otp}) => ({id,name,url,token,otp: otp || ""})));
+// "Karakter = seed" satırlarını ayır
+const parseOtp = txt => String(txt || "").split(/\n/).map(l => l.trim()).filter(Boolean).map(l => {
+  const i = l.search(/[=:]/);
+  return i > 0 ? { name: l.slice(0, i).trim(), seed: l.slice(i + 1).trim() } : { name: "seed", seed: l };
+}).filter(x => x.seed);
+async function copyText(t){
+  try { await navigator.clipboard.writeText(t); return true; }
+  catch { const a = document.createElement("textarea"); a.value = t; document.body.appendChild(a); a.select(); const ok = document.execCommand("copy"); a.remove(); return ok; }
+}
+function otpMenu(c){
+  stopCapture();
+  const old = c.tile.querySelector(".otpmenu"); if (old) { old.remove(); return; }
+  document.querySelectorAll(".otpmenu").forEach(x => x.remove());
+  const list = parseOtp(c.m.otp), url = store.get("uplaj.otpUrl", "");
+  const box = document.createElement("div"); box.className = "otpmenu";
+  box.addEventListener("mousedown", e => e.stopPropagation());
+  if (!list.length) box.innerHTML = `<div class="hint">Bu makineye seed eklenmemiş. ⚙ (Düzenle) → "Karakterler ve OTP seed'leri".</div>`;
+  list.forEach(x => {
+    const b = document.createElement("button");
+    b.textContent = "📋 " + x.name;
+    b.title = "Seed'i kopyala" + (url ? " ve OTP sitesini aç" : "");
+    b.onclick = async () => {
+      const ok = await copyText(x.seed);
+      b.textContent = ok ? "✓ " + x.name + " — seed kopyalandı" : "kopyalanamadı";
+      if (ok && url) window.open(url, "uplaj-otp");
+      setTimeout(() => box.remove(), 1500);
+    };
+    box.appendChild(b);
+  });
+  const h = document.createElement("div"); h.className = "hint";
+  h.textContent = url ? "Sitede seed kutusuna yapıştır (Ctrl+V), Kodu üret." : "OTP sitesi adresi girilmemiş (⚙ Düzenle).";
+  box.appendChild(h);
+  c.tile.appendChild(box);
+}
+document.addEventListener("mousedown", () => document.querySelectorAll(".otpmenu").forEach(x => x.remove()));
 
 // ---------- Makine bağlantısı
 class Conn {
@@ -142,13 +184,14 @@ class Conn {
       <div class="center">bağlanıyor…</div>
       <div class="bar"><span class="name"></span><span class="p-conn pill">…</span><span class="p-esp pill">kart</span>
         <span class="p-own pill">kontrol</span><span class="p-rtt pill">– ms</span><span class="p-path pill" title="bağlantı yolu"></span><span class="p-ver pill" title="program sürümü"></span>
-        <span class="sp" style="flex:1"></span><button class="b-take">Kontrolü al</button><button class="b-edit" title="Düzenle">⚙</button></div>
+        <span class="sp" style="flex:1"></span><button class="b-otp" title="Bu makinedeki karakterin seed'ini kopyala ve OTP sitesini aç">OTP</button><button class="b-take">Kontrolü al</button><button class="b-edit" title="Düzenle">⚙</button></div>
       <div class="num"></div>`;
     this.tile = t; this.video = t.querySelector("video"); this.center = t.querySelector(".center");
     t.querySelector(".name").textContent = this.m.name;
     t.querySelector(".num").textContent = this.index + 1;
     t.querySelector(".b-take").onclick = e => { e.stopPropagation(); this.take(); };
     t.querySelector(".b-edit").onclick = e => { e.stopPropagation(); openDialog(this.m); };
+    t.querySelector(".b-otp").onclick = e => { e.stopPropagation(); otpMenu(this); };
     t.addEventListener("mousedown", e => onTileMouseDown(this, e));
     t.addEventListener("dblclick", e => { if (!capture) { e.preventDefault(); setActive(this); toggleSolo(true); } });
     $("grid").appendChild(t);
@@ -482,13 +525,14 @@ document.addEventListener("keyup", e => {
 $("takeAll").onclick = () => conns.forEach(c => c.take());
 $("releaseAll").onclick = () => { stopCapture(); conns.forEach(c => c.release()); };
 $("share").onclick = () => {
-  const code = btoa(unescape(encodeURIComponent(JSON.stringify(machines.map(({name,url,token}) => ({name,url,token}))))));
+  const code = btoa(unescape(encodeURIComponent(JSON.stringify(machines.map(({name,url,token,otp}) => ({name,url,token,otp: otp || "", otpUrl: store.get("uplaj.otpUrl", "")}))))));
   const input = prompt("Bu kodu ortağına gönder. Ortağın kendi panelinde 'Liste'ye basıp bu kutuya yapıştırınca bütün makineler eklenir.\n\nBaşkasından kod aldıysan buraya yapıştırıp Tamam'a bas:", code);
   if (!input || input === code) return;
   try {
     const list = JSON.parse(decodeURIComponent(escape(atob(input.trim()))));
     if (!Array.isArray(list)) throw 0;
-    machines = list.map((m, i) => ({ id: Date.now() + i, name: String(m.name), url: String(m.url), token: String(m.token) }));
+    machines = list.map((m, i) => ({ id: Date.now() + i, name: String(m.name), url: String(m.url), token: String(m.token), otp: String(m.otp || "") }));
+    const ou = list.map(m => m.otpUrl).find(Boolean); if (ou) store.set("uplaj.otpUrl", String(ou));
     saveMachines(); rebuild();
   } catch { alert("Kod okunamadı."); }
 };
@@ -503,6 +547,8 @@ function openDialog(m){
   const onAgent = location.protocol.startsWith("http") && !location.hostname.endsWith("github.io");
   $("fUrl").value = m ? m.url : (machines.length || !onAgent ? "" : location.origin);
   $("fToken").value = m ? m.token : "";
+  $("fOtp").value = m ? (m.otp || "") : "";
+  $("fOtpUrl").value = store.get("uplaj.otpUrl", "");
   $("fDel").style.display = m ? "" : "none";
   $("dlg").showModal();
 }
@@ -513,7 +559,9 @@ $("fSave").onclick = () => {
   let url = $("fUrl").value.trim();
   if (url && !/^https?:\/\//.test(url)) url = "http://" + url;
   if (/^http:\/\/[\d.]+$/.test(url)) url += ":8780";
-  const m = { id: editing ? editing.id : Date.now(), name: $("fName").value.trim() || "makine", url, token: $("fToken").value.trim() };
+  const m = { id: editing ? editing.id : Date.now(), name: $("fName").value.trim() || "makine", url, token: $("fToken").value.trim(), otp: $("fOtp").value.trim() };
+  let ou = $("fOtpUrl").value.trim(); if (ou && !/^https?:\/\//.test(ou)) ou = "https://" + ou;
+  store.set("uplaj.otpUrl", ou);
   if (!m.url || !m.token) { alert("Adres ve erişim kodu gerekli."); return; }
   if (location.protocol === "https:" && m.url.startsWith("http:")) alert("Uyarı: Bu panel https ile açık; http:// adreslere tarayıcı izin vermez. Paneli http:// adresten aç ya da makineye https adresi ver.");
   machines = editing ? machines.map(x => x === editing ? m : x) : [...machines, m];
