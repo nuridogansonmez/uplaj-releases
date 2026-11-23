@@ -48,8 +48,8 @@
   /* Üst şerit görüntünün DIŞINDA: oyun ekranını kapatmaz, her zaman tıklanır */
   .bar { order:-1; flex:none; display:flex; gap:5px; align-items:center; flex-wrap:nowrap; overflow:hidden; padding:3px 6px; min-height:28px; background:var(--panel2); border-bottom:1px solid var(--line); }
   .bar .pill { display:none; }
-  .bar .p-rtt, .bar .pill.bad, .bar .p-own.warn, .bar .p-esp.warn { display:inline-block; }
-  .bar:hover .pill { display:inline-block; }
+  /* Şerit sabit: isim + ms; sadece gerçek bir sorun varsa (kırmızı) ya da kart yükleniyorsa etiket çıkar */
+  .bar .p-rtt, .bar .pill.bad, .bar .p-esp.warn { display:inline-block; }
   .bar .name { font-weight:600; margin-right:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
   .bar button { padding:1px 7px; font-size:12px; background:#0b0d11; flex:none; }
   .pill { padding:1px 7px; border-radius:999px; font-size:11px; border:1px solid #fff3; color:#ccd; background:#0008; }
