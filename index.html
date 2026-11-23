@@ -88,8 +88,8 @@
   <label>İsim</label><input id="fName" placeholder="kvm1">
   <label>Adres</label><input id="fUrl" placeholder="http://10.10.10.181:8780 veya https://kvm1.alanadi.com">
   <label>Erişim kodu</label><input id="fToken" placeholder="uplaj-agent penceresinde yazar">
-  <label>Karakterler ve OTP seed'leri (isteğe bağlı, her satıra bir tane)</label>
-  <textarea id="fOtp" placeholder="KarakterAdi = seed&#10;Okcu = 5dbe...&#10;Priest = 8a1c..."></textarea>
+  <label>Karakterler (isteğe bağlı, her satıra bir tane): <code>Karakter | hesapID | seed</code></label>
+  <textarea id="fOtp" placeholder="Okcu | hesabim123 | 5dbe...&#10;Priest | hesabim456 | 8a1c..."></textarea>
   <label>OTP sitesi adresi (bütün makineler için aynı)</label><input id="fOtpUrl" placeholder="https://...">
   <div class="row"><button id="fDel" style="margin-right:auto;color:var(--bad)">Sil</button><button id="fCancel">Vazgeç</button><button id="fSave" class="primary">Kaydet</button></div>
 </dialog>
@@ -131,10 +131,15 @@ $("mode").onchange = () => { store.set("uplaj.mode", $("mode").value); stopCaptu
 $("cmdctrl").onchange = () => store.set("uplaj.cmdctrl", $("cmdctrl").checked);
 const saveMachines = () => store.set("uplaj.machines", machines.map(({id,name,url,token,otp}) => ({id,name,url,token,otp: otp || ""})));
 // "Karakter = seed" satırlarını ayır
+// Satır biçimi:  Karakter | hesapID | seed   (eski biçim de olur: Karakter = seed)
 const parseOtp = txt => String(txt || "").split(/\n/).map(l => l.trim()).filter(Boolean).map(l => {
+  if (l.includes("|")) {
+    const [name, id, seed] = l.split("|").map(x => (x || "").trim());
+    return { name: name || "karakter", id: id || "", seed: seed || "" };
+  }
   const i = l.search(/[=:]/);
-  return i > 0 ? { name: l.slice(0, i).trim(), seed: l.slice(i + 1).trim() } : { name: "seed", seed: l };
-}).filter(x => x.seed);
+  return i > 0 ? { name: l.slice(0, i).trim(), id: "", seed: l.slice(i + 1).trim() } : { name: "seed", id: "", seed: l };
+}).filter(x => x.seed || x.id);
 async function copyText(t){
   try { await navigator.clipboard.writeText(t); return true; }
   catch { const a = document.createElement("textarea"); a.value = t; document.body.appendChild(a); a.select(); const ok = document.execCommand("copy"); a.remove(); return ok; }
@@ -146,26 +151,25 @@ function otpMenu(c){
   const list = parseOtp(c.m.otp), url = store.get("uplaj.otpUrl", "");
   const box = document.createElement("div"); box.className = "otpmenu";
   box.addEventListener("mousedown", e => e.stopPropagation());
-  if (!list.length) box.innerHTML = `<div class="hint">Bu makineye seed eklenmemiş. ⚙ (Düzenle) → "Karakterler ve OTP seed'leri".</div>`;
+  const close = (el, msg) => { el.textContent = msg; setTimeout(() => box.remove(), 1000); };
+  const add = (label, title, fn) => { const b = document.createElement("button"); b.textContent = label; b.title = title; b.onclick = () => fn(b); box.appendChild(b); };
+  if (!list.length) box.innerHTML = `<div class="hint">Bu makineye karakter eklenmemiş. ⚙ (Düzenle) → "Karakterler" kutusuna<br><code>Karakter | hesapID | seed</code> yaz.</div>`;
   list.forEach(x => {
-    const b = document.createElement("button");
-    b.textContent = "📋 " + x.name;
-    b.title = "Seed'i bu bilgisayarda kopyala" + (url ? " ve OTP sitesini aç" : "");
-    const t = document.createElement("button");
-    t.textContent = "⌨ " + x.name + " seed'ini karşı PC'ye yaz";
-    t.title = "Karşı PC'de imleç neredeyse (ör. oradaki OTP sitesinin seed kutusu) seed'i oraya yazar";
-    t.onclick = () => { const n = typeText(c, x.seed, false); t.textContent = n ? "✓ yazıldı" : "yazılamadı"; setTimeout(() => box.remove(), 1200); };
-    b.onclick = async () => {
-      const ok = await copyText(x.seed);
-      b.textContent = ok ? "✓ " + x.name + " — seed kopyalandı" : "kopyalanamadı";
+    const h = document.createElement("div"); h.className = "hint"; h.style.cssText = "color:var(--text);font-weight:600;padding-top:6px";
+    h.textContent = x.name; box.appendChild(h);
+    if (x.id) add("⌨ ID'yi yaz + Tab (şifre kutusuna geç)", "Oyunda ID kutusuna tıkla, sonra bunu seç: ID yazılır, imleç şifre kutusuna geçer", b => close(b, typeText(c, x.id, "tab") === x.id.length ? "✓ ID yazıldı — şifreyi gir" : "⚠ bazı karakterler yazılamadı"));
+    if (x.id) add("⌨ ID'yi yaz", "Karşı PC'de imlecin olduğu kutuya hesap ID'sini yazar", b => close(b, typeText(c, x.id, false) === x.id.length ? "✓ ID yazıldı" : "⚠ bazı karakterler yazılamadı"));
+    if (x.seed) add("⌨ Seed'i yaz", "Karşı PC'de imlecin olduğu kutuya (ör. OTP sitesi) seed'i yazar", b => close(b, typeText(c, x.seed, false) ? "✓ seed yazıldı" : "yazılamadı"));
+    if (x.seed) add("📋 Seed'i bu bilgisayarda kopyala", "Seed'i kendi panoya kopyala" + (url ? " ve OTP sitesini aç" : ""), async b => {
+      const ok = await copyText(x.seed); close(b, ok ? "✓ kopyalandı" : "kopyalanamadı");
       if (ok && url) window.open(url, "uplaj-otp");
-      setTimeout(() => box.remove(), 1500);
-    };
-    box.appendChild(b); box.appendChild(t);
+    });
   });
-  const h = document.createElement("div"); h.className = "hint";
-  h.textContent = url ? "Sitede seed kutusuna yapıştır (Ctrl+V), Kodu üret." : "OTP sitesi adresi girilmemiş (⚙ Düzenle).";
-  box.appendChild(h);
+  const lay = store.get("uplaj.kbd", "us");
+  const k = document.createElement("div"); k.className = "hint"; k.style.paddingTop = "8px";
+  k.innerHTML = `Karşı PC klavyesi: <b>${lay === "tr" ? "Türkçe Q" : "İngilizce (US)"}</b> — <a href="#" style="color:var(--acc)">değiştir</a><br>(ID'de "i" harfi "ı" çıkıyorsa değiştir)`;
+  k.querySelector("a").onclick = e => { e.preventDefault(); store.set("uplaj.kbd", lay === "tr" ? "us" : "tr"); box.remove(); otpMenu(c); };
+  box.appendChild(k);
   c.tile.appendChild(box);
 }
 document.addEventListener("mousedown", () => document.querySelectorAll(".otpmenu").forEach(x => x.remove()));
@@ -191,12 +195,21 @@ function pressCombo(c, keys){
   if (!c.isOwner) { c.take(); setTimeout(go, 400); } else go();
 }
 // Metni karşı PC'ye klavyeden yazar (harf, rakam, boşluk, - _ . )
+// Karakter -> basılacak tuşlar. Karşı PC'nin klavye düzenine göre (US / Türkçe Q).
+const SH = 0xE1, ALTGR = 0xE6;
+const KBD = {
+  us: { ".": [0x37], ",": [0x36], "-": [0x2D], "_": [SH, 0x2D], "@": [SH, 0x1F], "!": [SH, 0x1E] },
+  tr: { ".": [0x38], ",": [0x31], "-": [0x2E], "_": [SH, 0x2E], "@": [ALTGR, 0x14], "!": [SH, 0x1E],
+        "i": [0x34], "İ": [SH, 0x34], "ı": [0x0C], "I": [SH, 0x0C], "ş": [0x33], "Ş": [SH, 0x33], "ğ": [0x2F], "Ğ": [SH, 0x2F],
+        "ü": [0x30], "Ü": [SH, 0x30], "ö": [0x36], "Ö": [SH, 0x36], "ç": [0x37], "Ç": [SH, 0x37] },
+};
 function charToKeys(ch){
+  const map = KBD[store.get("uplaj.kbd", "us")] || KBD.us;
+  if (map[ch]) return map[ch];
   if (/[a-z]/.test(ch)) return [HID["Key" + ch.toUpperCase()]];
-  if (/[A-Z]/.test(ch)) return [0xE1, HID["Key" + ch]];
+  if (/[A-Z]/.test(ch)) return [SH, HID["Key" + ch]];
   if (/[0-9]/.test(ch)) return [HID["Digit" + ch]];
   if (ch === " ") return [HID.Space];
-  if (ch === "-") return [HID.Minus];
   return null;
 }
 function typeText(c, text, enter){
@@ -211,7 +224,7 @@ function typeText(c, text, enter){
       [...keys].reverse().forEach(u => setTimeout(() => c.send(0x02, u), t));
       t += 25;
     });
-    if (enter) { setTimeout(() => c.send(0x01, HID.Enter), t + 50); setTimeout(() => c.send(0x02, HID.Enter), t + 90); }
+    if (enter) { const k = enter === "tab" ? HID.Tab : HID.Enter; setTimeout(() => c.send(0x01, k), t + 50); setTimeout(() => c.send(0x02, k), t + 90); }
   };
   if (!c.isOwner) { c.take(); setTimeout(go, 400); } else go();
   return seq.length;
