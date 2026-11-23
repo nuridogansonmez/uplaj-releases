@@ -166,6 +166,43 @@ function otpMenu(c){
 }
 document.addEventListener("mousedown", () => document.querySelectorAll(".otpmenu").forEach(x => x.remove()));
 
+// Özel tuş kombinasyonları (Mac klavyesinde basması zor olanlar)
+const COMBOS = [
+  ["Alt+F4 (pencereyi / oyunu kapat)", ["AltLeft", "F4"]],
+  ["Ctrl+Shift+Esc (Görev Yöneticisi)", ["ControlLeft", "ShiftLeft", "Escape"]],
+  ["Ctrl+Alt+Del", ["ControlLeft", "AltLeft", "Delete"]],
+  ["Alt+Tab (pencere değiştir)", ["AltLeft", "Tab"]],
+  ["Win (Başlat menüsü)", [0xE3]],
+  ["Win+D (masaüstünü göster)", [0xE3, "KeyD"]],
+  ["Alt+Enter (tam ekran / pencere)", ["AltLeft", "Enter"]],
+  ["Esc", ["Escape"]],
+];
+function pressCombo(c, keys){
+  const us = keys.map(k => typeof k === "number" ? k : HID[k]).filter(Boolean);
+  const go = () => {
+    us.forEach((u, i) => setTimeout(() => c.send(0x01, u), i * 40));
+    const t = us.length * 40 + 80;
+    [...us].reverse().forEach((u, i) => setTimeout(() => c.send(0x02, u), t + i * 40));
+  };
+  if (!c.isOwner) { c.take(); setTimeout(go, 400); } else go();
+}
+function keysMenu(c){
+  stopCapture();
+  document.querySelectorAll(".otpmenu").forEach(x => x.remove());
+  const box = document.createElement("div"); box.className = "otpmenu";
+  box.addEventListener("mousedown", e => e.stopPropagation());
+  COMBOS.forEach(([label, keys]) => {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.onclick = () => {
+      if (label.startsWith("Alt+F4") && !confirm(c.m.name + " üzerindeki aktif pencere kapatılsın mı (Alt+F4)?")) return;
+      pressCombo(c, keys); b.textContent = "✓ " + label; setTimeout(() => box.remove(), 700);
+    };
+    box.appendChild(b);
+  });
+  c.tile.appendChild(box);
+}
+
 // ---------- Makine bağlantısı
 class Conn {
   constructor(m, index){
@@ -184,7 +221,7 @@ class Conn {
       <div class="center">bağlanıyor…</div>
       <div class="bar"><span class="name"></span><span class="p-conn pill">…</span><span class="p-esp pill">kart</span>
         <span class="p-own pill">kontrol</span><span class="p-rtt pill">– ms</span><span class="p-path pill" title="bağlantı yolu"></span><span class="p-ver pill" title="program sürümü"></span>
-        <span class="sp" style="flex:1"></span><button class="b-otp" title="Bu makinedeki karakterin seed'ini kopyala ve OTP sitesini aç">OTP</button><button class="b-take">Kontrolü al</button><button class="b-edit" title="Düzenle">⚙</button></div>
+        <span class="sp" style="flex:1"></span><button class="b-keys" title="Özel tuşlar: Alt+F4, Ctrl+Alt+Del, Görev Yöneticisi…">⌨</button><button class="b-otp" title="Bu makinedeki karakterin seed'ini kopyala ve OTP sitesini aç">OTP</button><button class="b-take">Kontrolü al</button><button class="b-edit" title="Düzenle">⚙</button></div>
       <div class="num"></div>`;
     this.tile = t; this.video = t.querySelector("video"); this.center = t.querySelector(".center");
     t.querySelector(".name").textContent = this.m.name;
@@ -192,6 +229,7 @@ class Conn {
     t.querySelector(".b-take").onclick = e => { e.stopPropagation(); this.take(); };
     t.querySelector(".b-edit").onclick = e => { e.stopPropagation(); openDialog(this.m); };
     t.querySelector(".b-otp").onclick = e => { e.stopPropagation(); otpMenu(this); };
+    t.querySelector(".b-keys").onclick = e => { e.stopPropagation(); keysMenu(this); };
     t.addEventListener("mousedown", e => onTileMouseDown(this, e));
     t.addEventListener("dblclick", e => { if (!capture) { e.preventDefault(); setActive(this); toggleSolo(true); } });
     $("grid").appendChild(t);
