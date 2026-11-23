@@ -574,6 +574,7 @@ function videoPoint(c, e){
 }
 document.addEventListener("mousemove", e => {
   if (!capture || !active) return;
+  if ($("mode").value !== "rel" && onPanelUI(e)) return;
   if ($("mode").value === "rel") {
     if (e.movementX || e.movementY) active.send(0x04, ...u16(e.movementX), ...u16(e.movementY));
   } else if (e.target.closest(".tile") === active.tile) {
@@ -581,7 +582,9 @@ document.addEventListener("mousemove", e => {
     active.send(0x03, ...u16(Math.round(x * 32767)), ...u16(Math.round(y * 32767)));
   }
 });
-const btn = e => { if (swallow) { if (e.type === "mouseup") swallow = false; return; } if (!capture || !active) return; if ($("mode").value === "abs" && e.target.closest(".tile") !== active.tile) return; e.preventDefault(); active.send(0x05, e.buttons & 0x1F); };
+// Panelin kendi düğmeleri/menüleri (OTP, ⌨, ⚙ …) karşı PC'ye tıklama olarak gitmesin
+const onPanelUI = e => !!(e.target.closest && e.target.closest(".bar, .otpmenu, button, dialog"));
+const btn = e => { if (swallow) { if (e.type === "mouseup") swallow = false; return; } if (!capture || !active) return; if (onPanelUI(e)) return; if ($("mode").value === "abs" && e.target.closest(".tile") !== active.tile) return; e.preventDefault(); active.send(0x05, e.buttons & 0x1F); };
 document.addEventListener("mousedown", btn);
 document.addEventListener("mouseup", btn);
 let wheelAcc = 0;
