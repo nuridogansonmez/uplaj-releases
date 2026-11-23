@@ -362,6 +362,18 @@ class Conn {
         this.pill("p-path", relay ? "TURN" : host ? "yerel ağ" : "doğrudan", relay ? "warn" : "ok");
       }
       if (inb) {
+        // Donma bekçisi: 6 sn boyunca yeni kare gelmezse görüntü bağlantısını yenile
+        const fd = inb.framesDecoded || 0;
+        if (fd !== this.lastFrames) { this.lastFrames = fd; this.frozenSince = 0; }
+        else if (!this.paused && !this.off && !document.hidden) {
+          this.frozenSince = this.frozenSince || performance.now();
+          if (performance.now() - this.frozenSince > 6000 && performance.now() - (this.healedAt || 0) > 15000) {
+            this.healedAt = performance.now(); this.frozenSince = 0;
+            console.log(this.m.name + ": görüntü dondu, yenileniyor");
+            this.startWebRTC(this.ice || []);
+            return;
+          }
+        }
         const fps = inb.framesPerSecond || 0, w = inb.frameWidth, h = inb.frameHeight;
         this.pill("p-path", (this.tile.querySelector(".p-path").textContent.split(" ·")[0] || "") + (w ? ` · ${w}×${h} ${fps|0}fps` : ""), this.tile.querySelector(".p-path").className.split(" ").pop());
       }
