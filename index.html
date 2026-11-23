@@ -150,14 +150,18 @@ function otpMenu(c){
   list.forEach(x => {
     const b = document.createElement("button");
     b.textContent = "📋 " + x.name;
-    b.title = "Seed'i kopyala" + (url ? " ve OTP sitesini aç" : "");
+    b.title = "Seed'i bu bilgisayarda kopyala" + (url ? " ve OTP sitesini aç" : "");
+    const t = document.createElement("button");
+    t.textContent = "⌨ " + x.name + " seed'ini karşı PC'ye yaz";
+    t.title = "Karşı PC'de imleç neredeyse (ör. oradaki OTP sitesinin seed kutusu) seed'i oraya yazar";
+    t.onclick = () => { const n = typeText(c, x.seed, false); t.textContent = n ? "✓ yazıldı" : "yazılamadı"; setTimeout(() => box.remove(), 1200); };
     b.onclick = async () => {
       const ok = await copyText(x.seed);
       b.textContent = ok ? "✓ " + x.name + " — seed kopyalandı" : "kopyalanamadı";
       if (ok && url) window.open(url, "uplaj-otp");
       setTimeout(() => box.remove(), 1500);
     };
-    box.appendChild(b);
+    box.appendChild(b); box.appendChild(t);
   });
   const h = document.createElement("div"); h.className = "hint";
   h.textContent = url ? "Sitede seed kutusuna yapıştır (Ctrl+V), Kodu üret." : "OTP sitesi adresi girilmemiş (⚙ Düzenle).";
@@ -186,11 +190,53 @@ function pressCombo(c, keys){
   };
   if (!c.isOwner) { c.take(); setTimeout(go, 400); } else go();
 }
+// Metni karşı PC'ye klavyeden yazar (harf, rakam, boşluk, - _ . )
+function charToKeys(ch){
+  if (/[a-z]/.test(ch)) return [HID["Key" + ch.toUpperCase()]];
+  if (/[A-Z]/.test(ch)) return [0xE1, HID["Key" + ch]];
+  if (/[0-9]/.test(ch)) return [HID["Digit" + ch]];
+  if (ch === " ") return [HID.Space];
+  if (ch === "-") return [HID.Minus];
+  return null;
+}
+function typeText(c, text, enter){
+  const seq = [];
+  for (const ch of String(text)) { const k = charToKeys(ch); if (k) seq.push(k); }
+  if (!seq.length) return 0;
+  const go = () => {
+    let t = 0;
+    seq.forEach(keys => {
+      keys.forEach(u => setTimeout(() => c.send(0x01, u), t));
+      t += 25;
+      [...keys].reverse().forEach(u => setTimeout(() => c.send(0x02, u), t));
+      t += 25;
+    });
+    if (enter) { setTimeout(() => c.send(0x01, HID.Enter), t + 50); setTimeout(() => c.send(0x02, HID.Enter), t + 90); }
+  };
+  if (!c.isOwner) { c.take(); setTimeout(go, 400); } else go();
+  return seq.length;
+}
+async function typeClipboard(c, enter){
+  let txt = "";
+  try { txt = await navigator.clipboard.readText(); } catch {}
+  if (!txt) txt = prompt("Karşı PC'ye yazılacak metni yapıştır:") || "";
+  txt = txt.trim();
+  if (!txt) return;
+  if (txt.length > 100) { alert("Metin çok uzun (en fazla 100 karakter)."); return; }
+  const n = typeText(c, txt, enter);
+  if (n !== txt.length) alert("Bazı karakterler (Türkçe harf / özel işaret) yazılamadı; sadece harf, rakam, boşluk ve - yazılır.");
+}
+
 function keysMenu(c){
   stopCapture();
   document.querySelectorAll(".otpmenu").forEach(x => x.remove());
   const box = document.createElement("div"); box.className = "otpmenu";
   box.addEventListener("mousedown", e => e.stopPropagation());
+  [["📋→⌨ Panodaki metni yaz (ör. OTP kodu)", false], ["📋→⌨ Panodaki metni yaz + Enter", true]].forEach(([label, enter]) => {
+    const b = document.createElement("button"); b.textContent = label;
+    b.onclick = () => { box.remove(); typeClipboard(c, enter); };
+    box.appendChild(b);
+  });
   COMBOS.forEach(([label, keys]) => {
     const b = document.createElement("button");
     b.textContent = label;
