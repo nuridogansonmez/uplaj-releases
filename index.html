@@ -185,6 +185,7 @@ class Conn {
       if (!this.updating) this.pill("p-ver", "v" + s.version);
       autoUpdate();
       if (s.espState) this.pill("p-esp", "kart: " + s.espState, "warn");
+      else if (s.espPort === "windows") this.pill("p-esp", "Windows girişi ✓", "ok");
       else this.pill("p-esp", s.esp ? "kart ✓" : "kart takılı değil", s.esp ? "ok" : "bad");
       this.isOwner = s.owner === me();
       this.ownerName = s.owner;
