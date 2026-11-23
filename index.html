@@ -38,6 +38,9 @@
   .bar .p-rtt, .bar .pill.bad, .bar .p-own.warn, .bar .p-esp.warn { display:inline-block; }
   .bar:hover .pill, .bar:hover button, .bar:focus-within button { display:inline-block; }
   .bar:hover { background:linear-gradient(#000e, #0006); }
+  /* Kontrol ederken (yeşil çerçeve) üst şerit araya girmesin: tıklama ve fare karşı PC'ye gider */
+  .tile.capture .bar { pointer-events:none; background:none; min-height:0; }
+  .tile.capture .bar .name, .tile.capture .bar .p-rtt { opacity:.55; }
   .bar .name { font-weight:600; margin-right:4px; text-shadow:0 1px 2px #000; }
   .bar button { padding:2px 7px; font-size:12px; background:#000a; }
   .pill { padding:1px 7px; border-radius:999px; font-size:11px; border:1px solid #fff3; color:#ccd; background:#0008; }
