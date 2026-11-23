@@ -572,10 +572,14 @@ let hideTimer = null;
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     stopCapture();
-    hideTimer = setTimeout(() => conns.forEach(c => { c.sendJSON({ type: "pause" }); c.closePC(); c.paused = true; }), 20000);
+    // Görüntüyü KESME (geri dönünce bağlantı baştan kurulup ekranlar kararıyordu);
+    // 20 sn sonra izleme moduna (2 kare/sn, küçük) geç: kota az gider, dönünce anında görünür.
+    hideTimer = setTimeout(() => { if (!liteMode) setLite(true); }, 20000);
   } else {
     clearTimeout(hideTimer);
-    if (!idlePaused) conns.forEach(c => { if (c.paused && !c.off) { c.paused = false; c.reconnect(); } });
+    lastActivity = Date.now();
+    if (liteMode) setLite(false);
+    conns.forEach(c => { if (c.paused && !c.off) { c.paused = false; c.reconnect(); } });
   }
 });
 // Kimse kullanmıyorsa 10 dk sonra İZLEME MODU: görüntü durmaz, saniyede 2 kare
