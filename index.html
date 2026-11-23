@@ -103,6 +103,8 @@
   <label>Karakterler (isteğe bağlı) — OTP menüsünden yazdırılır</label>
   <div id="fChars"></div>
   <button id="fAddChar" type="button" style="margin-top:6px">+ Karakter ekle</button>
+  <label>Ortak oyun şifresi (bütün karakterler için; sadece bu tarayıcıda saklanır, Liste koduna girmez)</label>
+  <div style="display:flex;gap:6px"><input id="fPass" type="password" autocomplete="off" placeholder="boş bırakırsan giriş butonu şifre yazmaz"><button type="button" id="fPassShow">Göster</button></div>
   <label>OTP sitesi adresi (bütün makineler için aynı)</label><input id="fOtpUrl" placeholder="https://...">
   <div class="row"><button id="fDel" style="margin-right:auto;color:var(--bad)">Sil</button><button id="fCancel">Vazgeç</button><button id="fSave" class="primary">Kaydet</button></div>
 </dialog>
@@ -174,6 +176,14 @@ function otpMenu(c){
   list.forEach(x => {
     const h = document.createElement("div"); h.className = "hint"; h.style.cssText = "color:var(--text);font-weight:600;padding-top:6px";
     h.textContent = x.name; box.appendChild(h);
+    if (x.id) add("🔑 Giriş yap (ID + şifre + Enter, 1 sn sonra Enter)", "Oyunda ID kutusuna tıkla, sonra bunu seç", b => {
+      const pass = store.get("uplaj.pass", "");
+      if (!pass) { close(b, "⚠ ortak şifre girilmemiş (⚙ Düzenle)"); return; }
+      const bad = untypeable(x.id + pass);
+      if (bad.length) { close(b, "⚠ yazılamayan karakter: " + [...new Set(bad)].join(" ")); return; }
+      runSteps(c, [["text", x.id], ["key", "Tab"], ["wait", 150], ["text", pass], ["key", "Enter"], ["wait", 1000], ["key", "Enter"]]);
+      close(b, "✓ giriş yazıldı");
+    });
     if (x.id) add("⌨ ID'yi yaz + Tab (sonra şifreyi gir)", "Oyunda ID kutusuna tıkla, sonra bunu seç: ID yazılır, imleç şifre kutusuna geçer", b => close(b, typeText(c, x.id, "tab") === x.id.length ? "✓ ID yazıldı — şifreyi gir" : "⚠ bazı karakterler yazılamadı"));
     if (x.id) add("⌨ ID'yi yaz", "Karşı PC'de imlecin olduğu kutuya hesap ID'sini yazar", b => close(b, typeText(c, x.id, false) === x.id.length ? "✓ ID yazıldı" : "⚠ bazı karakterler yazılamadı"));
     if (x.seed) add("⌨ Seed'i yaz", "Karşı PC'de imlecin olduğu kutuya (ör. OTP sitesi) seed'i yazar", b => close(b, typeText(c, x.seed, false) ? "✓ seed yazıldı" : "yazılamadı"));
@@ -215,8 +225,14 @@ function pressCombo(c, keys){
 // Karakter -> basılacak tuşlar. Karşı PC'nin klavye düzenine göre (US / Türkçe Q).
 const SH = 0xE1, ALTGR = 0xE6;
 const KBD = {
-  us: { ".": [0x37], ",": [0x36], "-": [0x2D], "_": [SH, 0x2D], "@": [SH, 0x1F], "!": [SH, 0x1E] },
+  us: { ".": [0x37], ",": [0x36], "-": [0x2D], "_": [SH, 0x2D], "@": [SH, 0x1F], "!": [SH, 0x1E],
+        "#": [SH, 0x20], "$": [SH, 0x21], "%": [SH, 0x22], "^": [SH, 0x23], "&": [SH, 0x24], "*": [SH, 0x25],
+        "(": [SH, 0x26], ")": [SH, 0x27], "=": [0x2E], "+": [SH, 0x2E], "?": [SH, 0x38], "/": [0x38],
+        ":": [SH, 0x33], ";": [0x33], "'": [0x34], "\"": [SH, 0x34], "<": [SH, 0x36], ">": [SH, 0x37] },
   tr: { ".": [0x38], ",": [0x31], "-": [0x2E], "_": [SH, 0x2E], "@": [ALTGR, 0x14], "!": [SH, 0x1E],
+        "'": [SH, 0x1F], "^": [SH, 0x20], "+": [SH, 0x21], "%": [SH, 0x22], "&": [SH, 0x23], "/": [SH, 0x24],
+        "(": [SH, 0x25], ")": [SH, 0x26], "=": [SH, 0x27], "*": [0x2D], "?": [SH, 0x2D], "#": [ALTGR, 0x20],
+        "$": [ALTGR, 0x21], ":": [SH, 0x38], ";": [SH, 0x31], "\"": [0x35], "<": [0x64], ">": [SH, 0x64],
         "i": [0x34], "İ": [SH, 0x34], "ı": [0x0C], "I": [SH, 0x0C], "ş": [0x33], "Ş": [SH, 0x33], "ğ": [0x2F], "Ğ": [SH, 0x2F],
         "ü": [0x30], "Ü": [SH, 0x30], "ö": [0x36], "Ö": [SH, 0x36], "ç": [0x37], "Ç": [SH, 0x37] },
 };
@@ -246,6 +262,24 @@ function typeText(c, text, enter){
   if (!c.isOwner) { c.take(); setTimeout(go, 400); } else go();
   return seq.length;
 }
+// Sıralı yazma: [["text","abc"], ["key","Tab"], ["wait",1000], ...]
+function runSteps(c, steps){
+  const go = () => {
+    let t = 0;
+    for (const [kind, v] of steps) {
+      if (kind === "wait") { t += v; continue; }
+      const seq = kind === "key" ? [[HID[v]]] : [...String(v)].map(charToKeys).filter(Boolean);
+      for (const keys of seq) {
+        keys.forEach(u => setTimeout(() => c.send(0x01, u), t)); t += 30;
+        [...keys].reverse().forEach(u => setTimeout(() => c.send(0x02, u), t)); t += 30;
+      }
+      t += 60;
+    }
+  };
+  if (!c.isOwner) { c.take(); setTimeout(go, 400); } else go();
+}
+const untypeable = txt => [...String(txt)].filter(ch => !charToKeys(ch));
+
 async function typeClipboard(c, enter){
   let txt = "";
   try { txt = await navigator.clipboard.readText(); } catch {}
@@ -700,6 +734,7 @@ function openDialog(m){
   const rows = m ? parseOtp(m.otp) : [];
   (rows.length ? rows : [{ name: "", id: "", seed: "" }]).forEach(addCharRow);
   $("fOtpUrl").value = store.get("uplaj.otpUrl", "");
+  $("fPass").value = store.get("uplaj.pass", ""); $("fPass").type = "password"; $("fPassShow").textContent = "Göster";
   $("fDel").style.display = m ? "" : "none";
   $("dlg").showModal();
 }
@@ -711,6 +746,7 @@ function addCharRow(x){
   $("fChars").appendChild(r);
 }
 $("fAddChar").onclick = () => addCharRow({});
+$("fPassShow").onclick = () => { const p = $("fPass"); p.type = p.type === "password" ? "text" : "password"; $("fPassShow").textContent = p.type === "password" ? "Göster" : "Gizle"; };
 const charsText = () => [...$("fChars").querySelectorAll(".charrow")].map(r => {
   const v = cls => r.querySelector(cls).value.replace(/[|\n]/g, " ").trim();
   const name = v(".cName"), id = v(".cId"), seed = v(".cSeed").replace(/\s+/g, "");
@@ -728,6 +764,7 @@ $("fSave").onclick = () => {
   const m = { id: editing ? editing.id : Date.now(), name: $("fName").value.trim() || "makine", url, token: $("fToken").value.trim(), otp: charsText() };
   let ou = $("fOtpUrl").value.trim(); if (ou && !/^https?:\/\//.test(ou)) ou = "https://" + ou;
   store.set("uplaj.otpUrl", ou);
+  store.set("uplaj.pass", $("fPass").value);
   if (!m.url || !m.token) { alert("Adres ve erişim kodu gerekli."); return; }
   if (location.protocol === "https:" && m.url.startsWith("http:")) alert("Uyarı: Bu panel https ile açık; http:// adreslere tarayıcı izin vermez. Paneli http:// adresten aç ya da makineye https adresi ver.");
   machines = editing ? machines.map(x => x === editing ? m : x) : [...machines, m];
