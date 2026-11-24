@@ -665,7 +665,9 @@ function activity(){
 }
 ["mousemove", "mousedown", "keydown", "wheel", "touchstart"].forEach(t => document.addEventListener(t, activity, { passive: true, capture: true }));
 setInterval(() => {
-  if (liteMode || capture || Date.now() - lastActivity < IDLE_MS) return;
+  // Kontrol açık unutulsa da (tıklayıp içeride kalınsa da) 10 dk hareketsizlikte izleme moduna geç
+  if (liteMode || Date.now() - lastActivity < IDLE_MS) return;
+  if (capture) stopCapture();
   setLite(true);
 }, 15000);
 document.addEventListener("contextmenu", e => { if (e.target.closest(".tile")) e.preventDefault(); });
