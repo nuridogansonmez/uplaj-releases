@@ -88,6 +88,7 @@
   <span class="sp"></span>
   <select id="mode" title="Fare modu"><option value="abs">Fare: ekrandaki nokta</option><option value="rel">Fare: kilitli (kamera)</option></select>
   <label class="chk"><input type="checkbox" id="cmdctrl"> Cmd = Ctrl</label>
+  <label class="chk" title="Açık: makineye tıklayınca kontrol direkt sende (diğer kişide olsa bile), 'Kontrolü al' butonu gizli. Kapalı: başkası kullanıyorsa 'Kontrolü al' butonuyla alınır."><input type="checkbox" id="autotake"> Tıkla = kontrol</label>
   <select id="layout" title="Ekranda kaç makine görünsün">
     <option value="auto">Düzen: otomatik</option><option value="tabs">Sekmeli (üstte sekmeler)</option><option value="1">1'li</option><option value="2">2'li</option>
     <option value="4">4'lü</option><option value="6">6'lı</option><option value="8">8'li</option><option value="9">9'lu</option>
@@ -154,6 +155,10 @@ const me = () => $("user").value.trim() || "isimsiz";
 $("user").onchange = () => { store.set("uplaj.user", $("user").value.trim()); conns.forEach(c => c.reconnect()); };
 $("mode").onchange = () => { store.set("uplaj.mode", $("mode").value); stopCapture(); };
 $("cmdctrl").onchange = () => store.set("uplaj.cmdctrl", $("cmdctrl").checked);
+$("autotake").checked = store.get("uplaj.autotake", true);
+$("autotake").onchange = () => { store.set("uplaj.autotake", $("autotake").checked); conns.forEach(c => c.updateOwner()); };
+// Makineye tıklayınca kontrolü al: ayar açıksa her zaman, kapalıysa sadece kimsede değilse
+function claim(c){ if ($("autotake").checked ? !c.isOwner : !c.ownerName) c.take(); }
 const saveMachines = () => store.set("uplaj.machines", machines.map(({id,name,url,token,otp}) => ({id,name,url,token,otp: otp || ""})));
 // "Karakter = seed" satırlarını ayır
 // Satır biçimi:  Karakter | hesapID | seed   (eski biçim de olur: Karakter = seed)
@@ -407,7 +412,7 @@ class Conn {
   updateOwner(){
     const o = this.ownerName;
     this.pill("p-own", o ? (this.isOwner ? "kontrol: sen" : "kontrol: " + o) : "kontrol: boşta", this.isOwner ? "ok" : o ? "warn" : "");
-    this.tile.querySelector(".b-take").style.display = this.isOwner ? "none" : "";
+    this.tile.querySelector(".b-take").style.display = this.isOwner || $("autotake").checked ? "none" : "";
   }
   onBinary(d){
     if ((d[0] === 0x90 || d[0] === 0x9F) && d.length >= 5) {
@@ -642,7 +647,7 @@ function onTileMouseDown(c, e){
     swallow = true; e.preventDefault();
     if (e.button === 0 && !e.target.closest(".bar")) selClick = { c, t: Date.now() };
     if (active !== c) setActive(c);
-    if (!c.ownerName) c.take(); startCapture(); return;
+    claim(c); startCapture(); return;
   }
 }
 // Başlığa (isim + ms) çift tık: her zaman büyüt / grid'e dön
@@ -740,7 +745,7 @@ document.addEventListener("keydown", e => {
     const n = +e.code.slice(5);
     if (n === 0) { stopCapture(); return; }
     const c = conns[n - 1];
-    if (c) { showConn(c); setActive(c); if (!c.ownerName) c.take(); startCapture(); }
+    if (c) { showConn(c); setActive(c); claim(c); startCapture(); }
     return;
   }
   if (!capture || !active) return;
