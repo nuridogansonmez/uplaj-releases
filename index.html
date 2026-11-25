@@ -197,9 +197,12 @@ function otpMenu(c){
     if (x.id) add("⌨ ID'yi yaz + Tab (sonra şifreyi gir)", "Oyunda ID kutusuna tıkla, sonra bunu seç: ID yazılır, imleç şifre kutusuna geçer", b => close(b, typeText(c, x.id, "tab") === x.id.length ? "✓ ID yazıldı — şifreyi gir" : "⚠ bazı karakterler yazılamadı"));
     if (x.id) add("⌨ ID'yi yaz", "Karşı PC'de imlecin olduğu kutuya hesap ID'sini yazar", b => close(b, typeText(c, x.id, false) === x.id.length ? "✓ ID yazıldı" : "⚠ bazı karakterler yazılamadı"));
     if (x.seed) add("⌨ Seed'i yaz", "Karşı PC'de imlecin olduğu kutuya (ör. OTP sitesi) seed'i yazar", b => close(b, typeText(c, x.seed, false) ? "✓ seed yazıldı" : "yazılamadı"));
-    if (x.seed) add("📋 Seed'i bu bilgisayarda kopyala", "Seed'i kendi panoya kopyala" + (url ? " ve OTP sitesini aç" : ""), async b => {
+    if (x.seed) add("📋 Seed'i kopyala", "Seed'i bu bilgisayarın panosuna kopyalar (sayfa açmaz)", async b => {
+      const ok = await copyText(x.seed); close(b, ok ? "✓ seed kopyalandı" : "kopyalanamadı");
+    });
+    if (x.seed && url) add("🌐 Seed'i kopyala + OTP sitesini aç", "Seed'i kopyalar ve OTP sitesini yeni sekmede açar", async b => {
       const ok = await copyText(x.seed); close(b, ok ? "✓ kopyalandı" : "kopyalanamadı");
-      if (ok && url) window.open(url, "uplaj-otp");
+      if (ok) window.open(url, "uplaj-otp");
     });
   });
   const lay = store.get("uplaj.kbd", "us");
@@ -352,6 +355,7 @@ class Conn {
     t.querySelector(".b-keys").onclick = e => { e.stopPropagation(); keysMenu(this); };
     t.addEventListener("mousedown", e => onTileMouseDown(this, e));
     t.querySelector(".bar").addEventListener("click", e => { if (!e.target.closest("button") && active !== this) setActive(this); });
+    t.querySelector(".bar").addEventListener("dblclick", e => onBarDblClick(this, e));
     t.addEventListener("dblclick", e => { if (!capture) { e.preventDefault(); setActive(this); toggleSolo(true); } });
     $("grid").appendChild(t);
   }
@@ -623,11 +627,31 @@ function stopCapture(){
 }
 function releaseKeys(){ held.clear(); if (active) active.send(0x07); }
 
+// Çift tık = büyüt. Sadece seçme tıklamasının hemen ardından sayılır; oyundayken
+// (kontrol açıkken) yapılan çift tıklar oyuna gider, panel karışmaz.
+let selClick = null;
 function onTileMouseDown(c, e){
   if (e.target.closest("button")) return;
+  if (e.button === 0 && selClick && selClick.c === c && Date.now() - selClick.t < 400 && !e.target.closest(".bar")) {
+    selClick = null; swallow = true; e.preventDefault();
+    if (!document.body.classList.contains("solo") && !document.body.classList.contains("tabs")) toggleSolo(true);
+    return;
+  }
   // seçme/başlatma tıklaması oyuna tıklama olarak gitmesin
-  if (active !== c) { swallow = true; setActive(c); e.preventDefault(); if (!c.ownerName) c.take(); startCapture(); return; }
-  if (!capture) { swallow = true; e.preventDefault(); if (!c.ownerName) c.take(); startCapture(); return; }
+  if (active !== c || !capture) {
+    swallow = true; e.preventDefault();
+    if (e.button === 0 && !e.target.closest(".bar")) selClick = { c, t: Date.now() };
+    if (active !== c) setActive(c);
+    if (!c.ownerName) c.take(); startCapture(); return;
+  }
+}
+// Başlığa (isim + ms) çift tık: her zaman büyüt / grid'e dön
+function onBarDblClick(c, e){
+  if (e.target.closest("button") || document.body.classList.contains("tabs")) return;
+  const solo = document.body.classList.contains("solo");
+  if (solo && active === c) { toggleSolo(false); return; }
+  if (active !== c) setActive(c);
+  toggleSolo(true);
 }
 
 document.addEventListener("pointerlockchange", () => { if (!document.pointerLockElement && $("mode").value === "rel") stopCapture(); });
