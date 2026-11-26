@@ -24,7 +24,7 @@
   body.solo .tile:not(.active) { min-height:0; }
   .slot { display:none; }
   /* Büyüt modunda sağdaki küçükler: sadece isim + ms (butonlar/ayrıntılar büyükte) */
-  body.solo .tile:not(.active) .bar .pill:not(.p-rtt), body.solo .tile:not(.active) .bar button { display:none !important; }
+  body.solo .tile:not(.active) .bar .pill:not(.p-rtt):not(.p-game), body.solo .tile:not(.active) .bar button { display:none !important; }
   body.solo .tile:not(.active) .bar { cursor:pointer; }
   /* Sekmeli görünüm */
   #tabbar { display:none; gap:4px; padding:6px 8px 0; flex:none; overflow-x:auto; border-bottom:1px solid var(--line); }
@@ -49,7 +49,8 @@
   .bar { order:-1; flex:none; display:flex; gap:5px; align-items:center; flex-wrap:nowrap; overflow:hidden; padding:3px 6px; min-height:28px; background:var(--panel2); border-bottom:1px solid var(--line); }
   .bar .pill { display:none; }
   /* Şerit sabit: isim + ms; sadece gerçek bir sorun varsa (kırmızı) ya da kart yükleniyorsa etiket çıkar */
-  .bar .p-rtt, .bar .pill.bad, .bar .p-esp.warn { display:inline-block; }
+  .bar .p-rtt, .bar .pill.bad, .bar .p-esp.warn, .bar .p-game.on { display:inline-block; }
+  .pill.info { color:#6cb6ff; border-color:#6cb6ff88; }
   .bar .name { font-weight:600; margin-right:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
   .bar button { padding:1px 7px; font-size:12px; background:#0b0d11; flex:none; }
   .pill { padding:1px 7px; border-radius:999px; font-size:11px; border:1px solid #fff3; color:#ccd; background:#0008; }
@@ -89,6 +90,7 @@
   <select id="mode" title="Fare modu"><option value="abs">Fare: ekrandaki nokta</option><option value="rel">Fare: kilitli (kamera)</option></select>
   <label class="chk"><input type="checkbox" id="cmdctrl"> Cmd = Ctrl</label>
   <label class="chk" title="Açık: makineye tıklayınca kontrol direkt sende (diğer kişide olsa bile), 'Kontrolü al' butonu gizli. Kapalı: başkası kullanıyorsa 'Kontrolü al' butonuyla alınır."><input type="checkbox" id="autotake"> Tıkla = kontrol</label>
+  <label class="chk" title="Launcher'da Start hazır olunca ya da 'Login Server Connection failed' gelince ses çalar"><input type="checkbox" id="gamesnd"> Ses</label>
   <select id="layout" title="Ekranda kaç makine görünsün">
     <option value="auto">Düzen: otomatik</option><option value="tabs">Sekmeli (üstte sekmeler)</option><option value="1">1'li</option><option value="2">2'li</option>
     <option value="4">4'lü</option><option value="6">6'lı</option><option value="8">8'li</option><option value="9">9'lu</option>
@@ -156,6 +158,24 @@ $("user").onchange = () => { store.set("uplaj.user", $("user").value.trim()); co
 $("mode").onchange = () => { store.set("uplaj.mode", $("mode").value); stopCapture(); };
 $("cmdctrl").onchange = () => store.set("uplaj.cmdctrl", $("cmdctrl").checked);
 $("autotake").checked = store.get("uplaj.autotake", true);
+$("gamesnd").checked = store.get("uplaj.gamesnd", true);
+$("gamesnd").onchange = () => store.set("uplaj.gamesnd", $("gamesnd").checked);
+// kısa uyarı sesi: Start hazır = iki tiz "ding", bağlanamadı = iki pes "bip"
+let audioCtx = null;
+function gameSound(ok){
+  if (!$("gamesnd").checked) return;
+  try {
+    audioCtx = audioCtx || new AudioContext();
+    const notes = ok ? [880, 1320] : [330, 220];
+    notes.forEach((f, i) => {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = audioCtx.currentTime + i * 0.18;
+      o.frequency.value = f; o.type = ok ? "sine" : "square";
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(ok ? 0.25 : 0.08, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+      o.connect(g).connect(audioCtx.destination); o.start(t); o.stop(t + 0.17);
+    });
+  } catch (e) {}
+}
+const GAME_LABEL = { game: ["oyunda", "info"], ready: ["Start hazır", "ok"], failed: ["bağlanamadı", "bad"], waiting: ["launcher bekliyor", "warn"], launcher: ["launcher açık", "warn"] };
 $("autotake").onchange = () => { store.set("uplaj.autotake", $("autotake").checked); conns.forEach(c => c.updateOwner()); };
 // Makineye tıklayınca kontrolü al: ayar açıksa her zaman, kapalıysa sadece kimsede değilse
 function claim(c){ if ($("autotake").checked ? !c.isOwner : !c.ownerName) c.take(); }
@@ -347,7 +367,7 @@ class Conn {
     t.className = "tile";
     t.innerHTML = `<video autoplay playsinline muted tabindex="0"></video>
       <div class="center">bağlanıyor…</div>
-      <div class="bar"><span class="name"></span><span class="p-conn pill">…</span><span class="p-esp pill">kart</span>
+      <div class="bar"><span class="name"></span><span class="p-game pill" title="oyun / launcher durumu"></span><span class="p-conn pill">…</span><span class="p-esp pill">kart</span>
         <span class="p-own pill">kontrol</span><span class="p-rtt pill">– ms</span><span class="p-path pill" title="bağlantı yolu"></span><span class="p-ver pill" title="program sürümü"></span>
         <span class="sp" style="flex:1"></span><button class="b-keys" title="Özel tuşlar: Alt+F4, Ctrl+Alt+Del, Görev Yöneticisi…">⌨</button><button class="b-otp" title="Bu makinedeki karakterin seed'ini kopyala ve OTP sitesini aç">OTP</button><button class="b-take">Kontrolü al</button><button class="b-edit" title="Düzenle">⚙</button></div>
       <div class="num"></div>`;
@@ -399,6 +419,7 @@ class Conn {
     else if (s.type === "status") {
       this.status = s;
       if (!this.updating) this.pill("p-ver", "v" + s.version);
+      this.showGame(s.game);
       autoUpdate();
       if (s.espState) this.pill("p-esp", "kart: " + s.espState, "warn");
       else if (s.espPort === "windows") this.pill("p-esp", "Windows girişi ✓", "ok");
@@ -408,6 +429,18 @@ class Conn {
       this.updateOwner();
       if (!s.video) { this.center.style.display = ""; this.center.textContent = "Bu makinede ffmpeg yok — görüntü gelmez, klavye/fare çalışır."; }
     }
+  }
+  showGame(g){
+    const st = (g && g.state) || "";
+    const el = this.tile.querySelector(".p-game");
+    if (!st) { el.className = "p-game pill"; el.textContent = ""; }
+    else {
+      const [txt, cls] = st === "loading" ? ["yükleniyor %" + (g.pct || 0), "warn"] : (GAME_LABEL[st] || [st, ""]);
+      el.textContent = txt; el.className = "p-game pill on " + cls;
+    }
+    // ilk bağlanışta değil, durum değişince ses
+    if (this.gameSt !== undefined && st !== this.gameSt && (st === "ready" || st === "failed")) gameSound(st === "ready");
+    this.gameSt = st;
   }
   updateOwner(){
     const o = this.ownerName;
