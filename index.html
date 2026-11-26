@@ -90,7 +90,6 @@
   <select id="mode" title="Fare modu"><option value="abs">Fare: ekrandaki nokta</option><option value="rel">Fare: kilitli (kamera)</option></select>
   <label class="chk"><input type="checkbox" id="cmdctrl"> Cmd = Ctrl</label>
   <label class="chk" title="Açık: makineye tıklayınca kontrol direkt sende (diğer kişide olsa bile), 'Kontrolü al' butonu gizli. Kapalı: başkası kullanıyorsa 'Kontrolü al' butonuyla alınır."><input type="checkbox" id="autotake"> Tıkla = kontrol</label>
-  <label class="chk" title="Launcher'da Start hazır olunca ya da 'Login Server Connection failed' gelince ses çalar"><input type="checkbox" id="gamesnd"> Ses</label>
   <select id="layout" title="Ekranda kaç makine görünsün">
     <option value="auto">Düzen: otomatik</option><option value="tabs">Sekmeli (üstte sekmeler)</option><option value="1">1'li</option><option value="2">2'li</option>
     <option value="4">4'lü</option><option value="6">6'lı</option><option value="8">8'li</option><option value="9">9'lu</option>
@@ -158,19 +157,15 @@ $("user").onchange = () => { store.set("uplaj.user", $("user").value.trim()); co
 $("mode").onchange = () => { store.set("uplaj.mode", $("mode").value); stopCapture(); };
 $("cmdctrl").onchange = () => store.set("uplaj.cmdctrl", $("cmdctrl").checked);
 $("autotake").checked = store.get("uplaj.autotake", true);
-$("gamesnd").checked = store.get("uplaj.gamesnd", true);
-$("gamesnd").onchange = () => store.set("uplaj.gamesnd", $("gamesnd").checked);
-// kısa uyarı sesi: Start hazır = iki tiz "ding", bağlanamadı = iki pes "bip"
+// Start hazır olunca kısa iki tiz "ding"
 let audioCtx = null;
-function gameSound(ok){
-  if (!$("gamesnd").checked) return;
+function startSound(){
   try {
     audioCtx = audioCtx || new AudioContext();
-    const notes = ok ? [880, 1320] : [330, 220];
-    notes.forEach((f, i) => {
+    [880, 1320].forEach((f, i) => {
       const o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = audioCtx.currentTime + i * 0.18;
-      o.frequency.value = f; o.type = ok ? "sine" : "square";
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(ok ? 0.25 : 0.08, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
       o.connect(g).connect(audioCtx.destination); o.start(t); o.stop(t + 0.17);
     });
   } catch (e) {}
@@ -449,13 +444,13 @@ class Conn {
       el.textContent = txt; el.className = "p-game pill on " + cls;
     }
     if (!st && g && g.note) { el.textContent = g.note; el.className = "p-game pill on bad"; }
+    // ilk bağlanışta değil, Start yeni geldiğinde ses
+    if (this.gameSt !== undefined && st === "ready" && this.gameSt !== "ready") startSound();
+    this.gameSt = st;
     const rb = this.tile.querySelector(".b-retry");
     rb.style.display = g ? "" : "none";
     rb.style.background = g && g.retry ? "#2a6" : "";
     rb.title = g && g.retry ? "Start'a kadar dene AÇIK — durdurmak için tıkla" : "Start'a kadar dene: 'bağlanamadı' gelince launcher'ı kapatıp yeniden açar; Start gelince durur";
-    // ilk bağlanışta değil, durum değişince ses
-    if (this.gameSt !== undefined && st !== this.gameSt && (st === "ready" || st === "failed")) gameSound(st === "ready");
-    this.gameSt = st;
   }
   updateOwner(){
     const o = this.ownerName;
