@@ -369,12 +369,20 @@ class Conn {
       <div class="center">bağlanıyor…</div>
       <div class="bar"><span class="name"></span><span class="p-game pill" title="oyun / launcher durumu"></span><span class="p-conn pill">…</span><span class="p-esp pill">kart</span>
         <span class="p-own pill">kontrol</span><span class="p-rtt pill">– ms</span><span class="p-path pill" title="bağlantı yolu"></span><span class="p-ver pill" title="program sürümü"></span>
-        <span class="sp" style="flex:1"></span><button class="b-keys" title="Özel tuşlar: Alt+F4, Ctrl+Alt+Del, Görev Yöneticisi…">⌨</button><button class="b-otp" title="Bu makinedeki karakterin seed'ini kopyala ve OTP sitesini aç">OTP</button><button class="b-take">Kontrolü al</button><button class="b-edit" title="Düzenle">⚙</button></div>
+        <span class="sp" style="flex:1"></span><button class="b-retry" style="display:none" title="Start'a kadar dene: 'bağlanamadı' gelince launcher'ı kapatıp yeniden açar; Start gelince durur">🔄</button><button class="b-keys" title="Özel tuşlar: Alt+F4, Ctrl+Alt+Del, Görev Yöneticisi…">⌨</button><button class="b-otp" title="Bu makinedeki karakterin seed'ini kopyala ve OTP sitesini aç">OTP</button><button class="b-take">Kontrolü al</button><button class="b-edit" title="Düzenle">⚙</button></div>
       <div class="num"></div>`;
     this.tile = t; this.video = t.querySelector("video"); this.center = t.querySelector(".center");
     t.querySelector(".name").textContent = this.m.name;
     t.querySelector(".num").textContent = this.index + 1;
     t.querySelector(".b-take").onclick = e => { e.stopPropagation(); this.take(); };
+    t.querySelector(".b-retry").onclick = async e => {
+      e.stopPropagation();
+      const on = !(this.status.game && this.status.game.retry);
+      try {
+        const r = await fetch(apiBase(this.m) + "/launcher/retry?on=" + (on ? 1 : 0), { method: "POST", headers: { "X-Uplaj-Token": this.m.token } });
+        if (!r.ok) throw new Error((await r.text()).trim());
+      } catch (err) { alert(this.m.name + ": " + (err.message || err)); }
+    };
     t.querySelector(".b-edit").onclick = e => { e.stopPropagation(); openDialog(this.m); };
     t.querySelector(".b-otp").onclick = e => { e.stopPropagation(); otpMenu(this); };
     t.querySelector(".b-keys").onclick = e => { e.stopPropagation(); keysMenu(this); };
@@ -435,9 +443,16 @@ class Conn {
     const el = this.tile.querySelector(".p-game");
     if (!st) { el.className = "p-game pill"; el.textContent = ""; }
     else {
-      const [txt, cls] = st === "loading" ? ["yükleniyor %" + (g.pct || 0), "warn"] : (GAME_LABEL[st] || [st, ""]);
+      let [txt, cls] = st === "loading" ? ["yükleniyor %" + (g.pct || 0), "warn"] : (GAME_LABEL[st] || [st, ""]);
+      if (g.retry) txt = "🔄 " + (g.tries || 0) + ". deneme · " + txt;
+      else if (g.note) { txt = g.note; cls = "bad"; }
       el.textContent = txt; el.className = "p-game pill on " + cls;
     }
+    if (!st && g && g.note) { el.textContent = g.note; el.className = "p-game pill on bad"; }
+    const rb = this.tile.querySelector(".b-retry");
+    rb.style.display = g ? "" : "none";
+    rb.style.background = g && g.retry ? "#2a6" : "";
+    rb.title = g && g.retry ? "Start'a kadar dene AÇIK — durdurmak için tıkla" : "Start'a kadar dene: 'bağlanamadı' gelince launcher'ı kapatıp yeniden açar; Start gelince durur";
     // ilk bağlanışta değil, durum değişince ses
     if (this.gameSt !== undefined && st !== this.gameSt && (st === "ready" || st === "failed")) gameSound(st === "ready");
     this.gameSt = st;
