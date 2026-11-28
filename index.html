@@ -458,6 +458,7 @@ class Conn {
     this.tile.querySelector(".b-take").style.display = this.isOwner || $("autotake").checked ? "none" : "";
   }
   onBinary(d){
+    if (d[0] === 0xA1) { this.onJPEG(d); return; }
     if ((d[0] === 0x90 || d[0] === 0x9F) && d.length >= 5) {
       const id = (d[1] | d[2]<<8 | d[3]<<16 | d[4]<<24) >>> 0;
       const t0 = this.pending.get(id); if (t0 === undefined) return;
@@ -471,6 +472,42 @@ class Conn {
     }
   }
 
+  // Eski Windows (7) makinesi: görüntü JPEG kare olarak WebSocket'ten gelir.
+  // Kareler canvas'a çizilir, canvas akışı aynı <video>'ya verilir (fare eşlemesi aynı kalır).
+  async onJPEG(d){
+    if (this.jpegBusy) return;
+    this.jpegBusy = true;
+    try {
+      const bmp = await createImageBitmap(new Blob([d.subarray(1)], { type: "image/jpeg" }));
+      let cv = this.jpegCanvas;
+      if (!cv) {
+        cv = this.jpegCanvas = document.createElement("canvas");
+        cv.width = bmp.width; cv.height = bmp.height;
+        this.jpegStream = cv.captureStream(0);
+      }
+      if (cv.width !== bmp.width || cv.height !== bmp.height) { cv.width = bmp.width; cv.height = bmp.height; }
+      cv.getContext("2d").drawImage(bmp, 0, 0);
+      bmp.close();
+      const tr = this.jpegStream.getVideoTracks()[0];
+      if (tr && tr.requestFrame) tr.requestFrame();
+      if (this.video.srcObject !== this.jpegStream) {
+        this.video.srcObject = this.jpegStream;
+        this.video.onloadeddata = () => { this.center.style.display = "none"; };
+        this.video.play().catch(() => {});
+      }
+      this.center.style.display = "none";
+      this.jpegFrames = (this.jpegFrames || 0) + 1;
+      const now = performance.now();
+      if (!this.jpegT0) this.jpegT0 = now;
+      if (now - this.jpegT0 > 2000) {
+        const fps = this.jpegFrames * 1000 / (now - this.jpegT0);
+        this.jpegFrames = 0; this.jpegT0 = now;
+        this.pill("p-path", `JPEG · ${cv.width}×${cv.height} ${fps.toFixed(fps < 2 ? 1 : 0)}fps`, "warn");
+      }
+    } catch (e) { console.warn(e); }
+    finally { this.jpegBusy = false; }
+  }
+
   async startWebRTC(iceServers){
     this.closePC();
     const pc = new RTCPeerConnection({ iceServers });
@@ -481,6 +518,7 @@ class Conn {
     dc.onopen = () => { if (this.pc === pc) this.dc = dc; };
     dc.onmessage = ev => this.onBinary(new Uint8Array(ev.data));
     pc.ontrack = ev => {
+      if (this.status && this.status.jpeg) return; // görüntü JPEG ile geliyor
       try { ev.receiver.jitterBufferTarget = 0; } catch {}
       try { ev.receiver.playoutDelayHint = 0; } catch {}
       this.video.srcObject = ev.streams[0] || new MediaStream([ev.track]);
@@ -535,7 +573,7 @@ class Conn {
         const host = local.candidateType === "host" && remote.candidateType === "host";
         this.pill("p-path", relay ? "TURN" : host ? "yerel ağ" : "doğrudan", relay ? "warn" : "ok");
       }
-      if (inb) {
+      if (inb && !(this.status && this.status.jpeg)) {
         // Donma bekçisi: 6 sn boyunca yeni kare gelmezse görüntü bağlantısını yenile
         const fd = inb.framesDecoded || 0;
         if (fd !== this.lastFrames) { this.lastFrames = fd; this.frozenSince = 0; }
